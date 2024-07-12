@@ -308,13 +308,15 @@ func (s *Scope) evalContext(parent *hcl.EvalContext, refs []*addrs.Reference, se
 
 	var diags tfdiags.Diagnostics
 
+	fns := s.Functions()
+
 	// Calling NewChild() on a nil parent will
 	// produce an EvalContext with no parent.
 	ctx := parent.NewChild()
-	ctx.Functions = make(map[string]function.Function)
+	ctx.Functions = make(map[string]function.Function, len(fns))
 	ctx.Variables = make(map[string]cty.Value)
 
-	for name, fn := range s.Functions() {
+	for name, fn := range fns {
 		ctx.Functions[name] = fn
 	}
 
