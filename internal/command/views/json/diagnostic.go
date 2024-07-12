@@ -158,34 +158,7 @@ func NewDiagnostic(diag tfdiags.Diagnostic, sources map[string][]byte) *Diagnost
 		return diagnostic
 	}
 
-	// We'll borrow HCL's range implementation here, because it has some
-	// handy features to help us produce a nice source code snippet.
-	highlightRange := sourceRefs.Subject.ToHCL()
-
-	// Some diagnostic sources fail to set the end of the subject range.
-	if highlightRange.End == (hcl.Pos{}) {
-		highlightRange.End = highlightRange.Start
-	}
-
-	snippetRange := highlightRange
-	if sourceRefs.Context != nil {
-		snippetRange = sourceRefs.Context.ToHCL()
-	}
-
-	// Make sure the snippet includes the highlight. This should be true
-	// for any reasonable diagnostic, but we'll make sure.
-	snippetRange = hcl.RangeOver(snippetRange, highlightRange)
-
-	// Empty ranges result in odd diagnostic output, so extend the end to
-	// ensure there's at least one byte in the snippet or highlight.
-	if snippetRange.Empty() {
-		snippetRange.End.Byte++
-		snippetRange.End.Column++
-	}
-	if highlightRange.Empty() {
-		highlightRange.End.Byte++
-		highlightRange.End.Column++
-	}
+	highlightRange, snippetRange := sourceRanges(sourceRefs)
 
 	diagnostic.Range = &DiagnosticRange{
 		Filename: highlightRange.Filename,
@@ -276,9 +249,52 @@ func NewDiagnostic(diag tfdiags.Diagnostic, sources map[string][]byte) *Diagnost
 	// This is particularly useful for expressions that get evaluated
 	// multiple times with different values, such as blocks using
 	// "count" and "for_each", or within "for" expressions.
+	values, fnCall := diagnoseFromExpr(diag)
+
+	diagnostic.Snippet.Values = values
+	diagnostic.Snippet.FunctionCall = fnCall
+
+	return diagnostic
+}
+
+func sourceRanges(sourceRefs tfdiags.Source) (hcl.Range, hcl.Range) {
+	// We'll borrow HCL's range implementation here, because it has some
+	// handy features to help us produce a nice source code snippet.
+	highlightRange := sourceRefs.Subject.ToHCL()
+
+	// Some diagnostic sources fail to set the end of the subject range.
+	if highlightRange.End == (hcl.Pos{}) {
+		highlightRange.End = highlightRange.Start
+	}
+
+	snippetRange := highlightRange
+	if sourceRefs.Context != nil {
+		snippetRange = sourceRefs.Context.ToHCL()
+	}
+
+	// Make sure the snippet includes the highlight. This should be true
+	// for any reasonable diagnostic, but we'll make sure.
+	snippetRange = hcl.RangeOver(snippetRange, highlightRange)
+
+	// Empty ranges result in odd diagnostic output, so extend the end to
+	// ensure there's at least one byte in the snippet or highlight.
+	if snippetRange.Empty() {
+		snippetRange.End.Byte++
+		snippetRange.End.Column++
+	}
+	if highlightRange.Empty() {
+		highlightRange.End.Byte++
+		highlightRange.End.Column++
+	}
+
+	return highlightRange, snippetRange
+}
+
+// This is split off from NewDiagnostic mostly to appease the complexity linter.
+func diagnoseFromExpr(diag tfdiags.Diagnostic) ([]DiagnosticExpressionValue, *DiagnosticFunctionCall) {
 	fromExpr := diag.FromExpr()
 	if fromExpr == nil {
-		return diagnostic
+		return nil, nil
 	}
 
 	expr := fromExpr.Expression
@@ -317,11 +333,9 @@ Traversals:
 		return values[i].Traversal < values[j].Traversal
 	})
 
-	diagnostic.Snippet.Values = values
-
 	callInfo := tfdiags.ExtraInfo[hclsyntax.FunctionCallDiagExtra](diag)
 	if callInfo == nil || callInfo.CalledFunctionName() == "" {
-		return diagnostic
+		return values, nil
 	}
 
 	calledAs := callInfo.CalledFunctionName()
@@ -336,9 +350,7 @@ Traversals:
 		fnCall.Signature = DescribeFunction(baseName, f)
 	}
 
-	diagnostic.Snippet.FunctionCall = fnCall
-
-	return diagnostic
+	return values, fnCall
 }
 
 func valueStatement(diag tfdiags.Diagnostic, val cty.Value) string {
@@ -360,47 +372,51 @@ func valueStatement(diag tfdiags.Diagnostic, val cty.Value) string {
 		// whatever was sensitive about it.
 		return "has a sensitive value"
 	case !val.IsKnown():
-		// We'll avoid saying anything about unknown or
-		// "known after apply" unless the diagnostic is
-		// explicitly marked as being caused by unknown
-		// values, because otherwise readers tend to be
-		// misled into thinking the error is caused by the
-		// unknown value even when it isn't.
-		ty := val.Type()
-		if ty == cty.DynamicPseudoType {
-			if !includeUnknown {
-				return ""
-			}
-			return "will be known only after apply"
-		}
+		return unknownTypeStatement(val, includeUnknown)
+	default:
+		return fmt.Sprintf("is %s", compactValueStr(val))
+	}
+}
 
+func unknownTypeStatement(val cty.Value, includeUnknown bool) string {
+	// We'll avoid saying anything about unknown or
+	// "known after apply" unless the diagnostic is
+	// explicitly marked as being caused by unknown
+	// values, because otherwise readers tend to be
+	// misled into thinking the error is caused by the
+	// unknown value even when it isn't.
+	ty := val.Type()
+	if ty == cty.DynamicPseudoType {
 		if !includeUnknown {
-			return fmt.Sprintf("is a %s", ty.FriendlyName())
+			return ""
 		}
+		return "will be known only after apply"
+	}
 
+	if !includeUnknown {
+		return fmt.Sprintf("is a %s", ty.FriendlyName())
+	}
+
+	switch {
+	case ty.IsCollectionType():
+		valRng := val.Range()
+		minLen := valRng.LengthLowerBound()
+		maxLen := valRng.LengthUpperBound()
+		const maxLimit = 1024 // (upper limit is just an arbitrary value to avoid showing distracting large numbers in the UI)
 		switch {
-		case ty.IsCollectionType():
-			valRng := val.Range()
-			minLen := valRng.LengthLowerBound()
-			maxLen := valRng.LengthUpperBound()
-			const maxLimit = 1024 // (upper limit is just an arbitrary value to avoid showing distracting large numbers in the UI)
-			switch {
-			case minLen == maxLen:
-				return fmt.Sprintf("is a %s of length %d, known only after apply", ty.FriendlyName(), minLen)
-			case minLen != 0 && maxLen <= maxLimit:
-				return fmt.Sprintf("is a %s with between %d and %d elements, known only after apply", ty.FriendlyName(), minLen, maxLen)
-			case minLen != 0:
-				return fmt.Sprintf("is a %s with at least %d elements, known only after apply", ty.FriendlyName(), minLen)
-			case maxLen <= maxLimit:
-				return fmt.Sprintf("is a %s with up to %d elements, known only after apply", ty.FriendlyName(), maxLen)
-			default:
-				return fmt.Sprintf("is a %s, known only after apply", ty.FriendlyName())
-			}
+		case minLen == maxLen:
+			return fmt.Sprintf("is a %s of length %d, known only after apply", ty.FriendlyName(), minLen)
+		case minLen != 0 && maxLen <= maxLimit:
+			return fmt.Sprintf("is a %s with between %d and %d elements, known only after apply", ty.FriendlyName(), minLen, maxLen)
+		case minLen != 0:
+			return fmt.Sprintf("is a %s with at least %d elements, known only after apply", ty.FriendlyName(), minLen)
+		case maxLen <= maxLimit:
+			return fmt.Sprintf("is a %s with up to %d elements, known only after apply", ty.FriendlyName(), maxLen)
 		default:
 			return fmt.Sprintf("is a %s, known only after apply", ty.FriendlyName())
 		}
 	default:
-		return fmt.Sprintf("is %s", compactValueStr(val))
+		return fmt.Sprintf("is a %s, known only after apply", ty.FriendlyName())
 	}
 }
 
