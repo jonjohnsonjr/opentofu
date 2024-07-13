@@ -28,7 +28,11 @@ func hashcode(v interface{}) interface{} {
 
 // Add adds an item to the set
 func (s Set) Add(v interface{}) {
-	s[hashcode(v)] = v
+	if h, ok := v.(Hashable); ok {
+		s[h.Hashcode()] = v
+	} else {
+		s[v] = v
+	}
 }
 
 // Delete removes an item from the set.
