@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/pprof"
 	"strings"
 
 	"github.com/apparentlymart/go-shquot/shquot"
@@ -66,7 +67,41 @@ func main() {
 	os.Exit(realMain())
 }
 
+func mutexProfile() func() {
+	runtime.SetMutexProfileFraction(1)
+	f, err := os.Create("mutex.pprof")
+	if err != nil {
+		log.Fatal(err)
+	}
+	p := pprof.Lookup("mutex")
+
+	return func() {
+		if err := p.WriteTo(f, 0); err != nil {
+			log.Fatalf("writing mutex profile: %v", err)
+		}
+		log.Printf("wrote mutex.pprof")
+	}
+}
+
+func blockProfile() func() {
+	runtime.SetBlockProfileRate(1)
+	f, err := os.Create("block.pprof")
+	if err != nil {
+		log.Fatal(err)
+	}
+	p := pprof.Lookup("block")
+
+	return func() {
+		if err := p.WriteTo(f, 0); err != nil {
+			log.Fatalf("writing block profile: %v", err)
+		}
+		log.Printf("wrote block.pprof")
+	}
+}
+
 func realMain() int {
+	// defer blockProfile()()
+	defer mutexProfile()()
 	defer logging.PanicHandler()
 
 	var err error
