@@ -313,18 +313,27 @@ func (m ReferenceMap) References(v dag.Vertex) []dag.Vertex {
 		return nil
 	}
 
-	var matches []dag.Vertex
+	var matchess [][]dag.Vertex
+	size := 0
 
 	if rrn, ok := rn.(GraphNodeRootReferencer); ok {
 		for _, ref := range rrn.RootReferences() {
-			matches = append(matches, m.addReference(addrs.RootModule, v, ref)...)
+			match := m.addReference(addrs.RootModule, v, ref)
+			size += len(match)
+			matchess = append(matchess, match)
 		}
 	}
 
 	for _, ref := range rn.References() {
-		matches = append(matches, m.addReference(vertexReferencePath(v), v, ref)...)
+		match := m.addReference(vertexReferencePath(v), v, ref)
+		size += len(match)
+		matchess = append(matchess, match)
 	}
 
+	matches := make([]dag.Vertex, 0, size)
+	for _, match := range matchess {
+		matches = append(matches, match...)
+	}
 	return matches
 }
 
