@@ -22,7 +22,7 @@ import (
 // object or its nested objects concurrently with any of the methods of a
 // particular ChangesSync.
 type ChangesSync struct {
-	lock    sync.Mutex
+	lock    sync.RWMutex
 	changes *Changes
 }
 
@@ -55,8 +55,8 @@ func (cs *ChangesSync) GetResourceInstanceChange(addr addrs.AbsResourceInstance,
 	if cs == nil {
 		panic("GetResourceInstanceChange on nil ChangesSync")
 	}
-	cs.lock.Lock()
-	defer cs.lock.Unlock()
+	cs.lock.RLock()
+	defer cs.lock.RUnlock()
 
 	if gen == states.CurrentGen {
 		return cs.changes.ResourceInstance(addr).DeepCopy()
@@ -81,8 +81,8 @@ func (cs *ChangesSync) GetChangesForConfigResource(addr addrs.ConfigResource) []
 	if cs == nil {
 		panic("GetChangesForConfigResource on nil ChangesSync")
 	}
-	cs.lock.Lock()
-	defer cs.lock.Unlock()
+	cs.lock.RLock()
+	defer cs.lock.RUnlock()
 	var changes []*ResourceInstanceChangeSrc
 	for _, c := range cs.changes.InstancesForConfigResource(addr) {
 		changes = append(changes, c.DeepCopy())
@@ -102,8 +102,8 @@ func (cs *ChangesSync) GetChangesForAbsResource(addr addrs.AbsResource) []*Resou
 	if cs == nil {
 		panic("GetChangesForAbsResource on nil ChangesSync")
 	}
-	cs.lock.Lock()
-	defer cs.lock.Unlock()
+	cs.lock.RLock()
+	defer cs.lock.RUnlock()
 	var changes []*ResourceInstanceChangeSrc
 	for _, c := range cs.changes.InstancesForAbsResource(addr) {
 		changes = append(changes, c.DeepCopy())
@@ -166,8 +166,8 @@ func (cs *ChangesSync) GetOutputChange(addr addrs.AbsOutputValue) *OutputChangeS
 	if cs == nil {
 		panic("GetOutputChange on nil ChangesSync")
 	}
-	cs.lock.Lock()
-	defer cs.lock.Unlock()
+	cs.lock.RLock()
+	defer cs.lock.RUnlock()
 
 	return cs.changes.OutputValue(addr)
 }
@@ -182,8 +182,8 @@ func (cs *ChangesSync) GetRootOutputChanges() []*OutputChangeSrc {
 	if cs == nil {
 		panic("GetRootOutputChanges on nil ChangesSync")
 	}
-	cs.lock.Lock()
-	defer cs.lock.Unlock()
+	cs.lock.RLock()
+	defer cs.lock.RUnlock()
 
 	return cs.changes.RootOutputValues()
 }
@@ -199,8 +199,8 @@ func (cs *ChangesSync) GetOutputChanges(parent addrs.ModuleInstance, module addr
 	if cs == nil {
 		panic("GetOutputChange on nil ChangesSync")
 	}
-	cs.lock.Lock()
-	defer cs.lock.Unlock()
+	cs.lock.RLock()
+	defer cs.lock.RUnlock()
 
 	return cs.changes.OutputValues(parent, module)
 }
