@@ -100,8 +100,8 @@ func blockProfile() func() {
 }
 
 func realMain() int {
-	// defer blockProfile()()
-	defer mutexProfile()()
+	defer blockProfile()()
+	// defer mutexProfile()()
 	defer logging.PanicHandler()
 
 	var err error

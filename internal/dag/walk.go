@@ -9,9 +9,7 @@ import (
 	"errors"
 	"log"
 	"sync"
-	"time"
 
-	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 )
 
@@ -78,6 +76,11 @@ func (w *Walker) init() {
 	}
 }
 
+type Task struct {
+	Cond *sync.Cond
+	Done bool
+}
+
 type walkerVertex struct {
 	// These should only be set once on initialization and never written again.
 	// They are not protected by a lock since they don't need to be since
@@ -89,7 +92,7 @@ type walkerVertex struct {
 	// CancelCh is closed when the vertex should cancel execution. If execution
 	// is already complete (DoneCh is closed), this has no effect. Otherwise,
 	// execution is cancelled as quickly as possible.
-	DoneCh   chan struct{}
+	DoneCh   *Task
 	CancelCh chan struct{}
 
 	DepsLock sync.Mutex
@@ -107,7 +110,7 @@ type walkerVertex struct {
 	// Below is not safe to read/write in parallel. This behavior is
 	// enforced by changes only happening in Update. Nothing else should
 	// ever modify these.
-	deps         map[Vertex]chan struct{}
+	deps         map[Vertex]*Task
 	depsCancelCh chan struct{}
 }
 
@@ -184,9 +187,9 @@ func (w *Walker) Update(g *AcyclicGraph) {
 
 		// Initialize the vertex info
 		info := &walkerVertex{
-			DoneCh:   make(chan struct{}),
+			DoneCh:   &Task{Cond: sync.NewCond(&sync.Mutex{}), Done: false},
 			CancelCh: make(chan struct{}),
-			deps:     make(map[Vertex]chan struct{}),
+			deps:     make(map[Vertex]*Task),
 		}
 
 		// Add it to the map and kick off the walk
@@ -278,7 +281,7 @@ func (w *Walker) Update(g *AcyclicGraph) {
 		cancelCh := make(chan struct{})
 
 		// Build a new deps copy
-		deps := make(map[Vertex]<-chan struct{})
+		deps := make(map[Vertex]*Task)
 		for k, v := range info.deps {
 			deps[k] = v
 		}
@@ -327,7 +330,13 @@ func (w *Walker) walkVertex(v Vertex, info *walkerVertex) {
 	defer w.wait.Done()
 
 	// When we're done, always close our done channel
-	defer close(info.DoneCh)
+	// defer close(info.DoneCh)
+	defer func() {
+		info.DoneCh.Cond.L.Lock()
+		info.DoneCh.Done = true
+		info.DoneCh.Cond.Broadcast()
+		info.DoneCh.Cond.L.Unlock()
+	}()
 
 	// Wait for our dependencies. We create a [closed] deps channel so
 	// that we can immediately fall through to load our actual DepsCh.
@@ -411,50 +420,19 @@ func (w *Walker) walkVertex(v Vertex, info *walkerVertex) {
 
 func (w *Walker) waitDeps(
 	v Vertex,
-	deps map[Vertex]<-chan struct{},
+	deps map[Vertex]*Task,
 	doneCh chan<- bool,
 	cancelCh <-chan struct{}) {
-	debug := logging.IsDebugOrHigher()
 
 	// For each dependency given to us, wait for it to complete
-	if debug {
-		for dep, depCh := range deps {
-		DebugDepSatisfied:
-			for {
-				select {
-				case <-depCh:
-					// Dependency satisfied!
-					break DebugDepSatisfied
+	for _, depCh := range deps {
+		depCh.Cond.L.Lock()
+		for !depCh.Done {
+			depCh.Cond.Wait()
 
-				case <-cancelCh:
-					// Wait cancelled. Note that we didn't satisfy dependencies
-					// so that anything waiting on us also doesn't run.
-					doneCh <- false
-					return
-
-				case <-time.After(time.Second * 5):
-					log.Printf("[TRACE] dag/walk: vertex %q is waiting for %q",
-						VertexName(v), VertexName(dep))
-				}
-			}
+			// TODO: Handle cancellation.
 		}
-	} else {
-		for _, depCh := range deps {
-		DepSatisfied:
-			for {
-				select {
-				case <-depCh:
-					// Dependency satisfied!
-					break DepSatisfied
-
-				case <-cancelCh:
-					// Wait cancelled. Note that we didn't satisfy dependencies
-					// so that anything waiting on us also doesn't run.
-					doneCh <- false
-					return
-				}
-			}
-		}
+		depCh.Cond.L.Unlock()
 	}
 
 	// Dependencies satisfied! We need to check if any errored
