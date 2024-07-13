@@ -34,6 +34,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	backendInit "github.com/opentofu/opentofu/internal/backend/init"
+
+	_ "net/http/pprof"
 )
 
 const (
@@ -67,6 +69,22 @@ func main() {
 	os.Exit(realMain())
 }
 
+func heapProfile() func() {
+	f, err := os.Create("heap.pprof")
+	if err != nil {
+		log.Fatal(err)
+	}
+	return func() {
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Fatalf("writing heap profile: %v", err)
+		}
+		if err := f.Close(); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("wrote heap.pprof")
+	}
+}
+
 func mutexProfile() func() {
 	runtime.SetMutexProfileFraction(1)
 	f, err := os.Create("mutex.pprof")
@@ -78,6 +96,9 @@ func mutexProfile() func() {
 	return func() {
 		if err := p.WriteTo(f, 0); err != nil {
 			log.Fatalf("writing mutex profile: %v", err)
+		}
+		if err := f.Close(); err != nil {
+			log.Fatal(err)
 		}
 		log.Printf("wrote mutex.pprof")
 	}
@@ -95,12 +116,17 @@ func blockProfile() func() {
 		if err := p.WriteTo(f, 0); err != nil {
 			log.Fatalf("writing block profile: %v", err)
 		}
+		if err := f.Close(); err != nil {
+			log.Fatal(err)
+		}
 		log.Printf("wrote block.pprof")
 	}
 }
 
 func realMain() int {
-	defer blockProfile()()
+	// go func() { log.Println(http.ListenAndServe("localhost:6060", nil)) }()
+	defer heapProfile()()
+	// defer blockProfile()()
 	// defer mutexProfile()()
 	defer logging.PanicHandler()
 

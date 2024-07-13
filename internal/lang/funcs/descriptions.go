@@ -5,7 +5,11 @@
 
 package funcs
 
-import "github.com/zclconf/go-cty/cty/function"
+import (
+	"sync"
+
+	"github.com/zclconf/go-cty/cty/function"
+)
 
 type descriptionEntry struct {
 	// Description is a description for the function.
@@ -556,6 +560,8 @@ var DescriptionList = map[string]descriptionEntry{
 	},
 }
 
+var addedDescriptions sync.Map
+
 // WithDescription looks up the description for a given function and uses
 // go-cty's WithNewDescriptions to replace the function's description and
 // parameter descriptions.
@@ -565,7 +571,15 @@ func WithDescription(name string, f function.Function) function.Function {
 		return f
 	}
 
+	if desc, ok := addedDescriptions.Load(name); ok {
+		return desc.(function.Function)
+	}
+
 	// Will panic if ParamDescription doesn't match the number of parameters
 	// the function expects
-	return f.WithNewDescriptions(desc.Description, desc.ParamDescription)
+	fn := f.WithNewDescriptions(desc.Description, desc.ParamDescription)
+
+	addedDescriptions.Store(name, fn)
+
+	return fn
 }

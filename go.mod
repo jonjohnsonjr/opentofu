@@ -1,6 +1,9 @@
 module github.com/opentofu/opentofu
 
 // replace github.com/hashicorp/go-hclog => ../../hashicorp/go-hclog
+replace github.com/hashicorp/hcl/v2 => ../hcl
+
+// replace github.com/hashicorp/hcl/v2 v2.20.1 => github.com/opentofu/hcl/v2 v2.0.0-20240416130056-03228b26f391
 
 require (
 	cloud.google.com/go/kms v1.15.5
@@ -269,5 +272,3 @@ require (
 )
 
 go 1.21
-
-replace github.com/hashicorp/hcl/v2 v2.20.1 => github.com/opentofu/hcl/v2 v2.0.0-20240416130056-03228b26f391
