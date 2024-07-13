@@ -103,12 +103,11 @@ func (g *AcyclicGraph) TransitiveReduction() {
 	// v such that the edge (u,v) exists (v is a direct descendant of u).
 	//
 	// For each v-prime reachable from v, remove the edge (u, v-prime).
-	vertices := g.Vertices()
-	for _, u := range vertices {
+	for _, u := range g.Vertices() {
 		start := g.downEdgesNoCopy(u)
 
 		// TODO: Does inlining actually help?
-		seen := make(map[Vertex]struct{}, len(vertices))
+		seen := make(map[Vertex]struct{})
 		frontier := make([]Vertex, 0, len(start))
 		for _, v := range start {
 			frontier = append(frontier, v)
