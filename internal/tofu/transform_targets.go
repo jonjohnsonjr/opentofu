@@ -10,6 +10,7 @@ import (
 
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/dag"
+	"github.com/opentofu/opentofu/internal/logging"
 )
 
 // GraphNodeTargetable is an interface for graph nodes to implement when they
@@ -30,6 +31,7 @@ type TargetsTransformer struct {
 }
 
 func (t *TargetsTransformer) Transform(g *Graph) error {
+	debug := logging.IsDebugOrHigher()
 	if len(t.Targets) > 0 {
 		targetedNodes, err := t.selectTargetedNodes(g, t.Targets)
 		if err != nil {
@@ -38,7 +40,9 @@ func (t *TargetsTransformer) Transform(g *Graph) error {
 
 		for _, v := range g.Vertices() {
 			if !targetedNodes.Include(v) {
-				log.Printf("[DEBUG] Removing %q, filtered by targeting.", dag.VertexName(v))
+				if debug {
+					log.Printf("[DEBUG] Removing %q, filtered by targeting.", dag.VertexName(v))
+				}
 				g.Remove(v)
 			}
 		}

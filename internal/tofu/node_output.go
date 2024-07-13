@@ -17,6 +17,7 @@ import (
 	"github.com/opentofu/opentofu/internal/dag"
 	"github.com/opentofu/opentofu/internal/lang"
 	"github.com/opentofu/opentofu/internal/lang/marks"
+	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/plans"
 	"github.com/opentofu/opentofu/internal/states"
 	"github.com/opentofu/opentofu/internal/tfdiags"
@@ -57,6 +58,8 @@ func (n *nodeExpandOutput) temporaryValue() bool {
 }
 
 func (n *nodeExpandOutput) DynamicExpand(ctx EvalContext) (*Graph, error) {
+	debug := logging.IsDebugOrHigher()
+
 	expander := ctx.InstanceExpander()
 	changes := ctx.Changes()
 
@@ -121,7 +124,9 @@ func (n *nodeExpandOutput) DynamicExpand(ctx EvalContext) (*Graph, error) {
 			}
 		}
 
-		log.Printf("[TRACE] Expanding output: adding %s as %T", absAddr.String(), node)
+		if debug {
+			log.Printf("[TRACE] Expanding output: adding %s as %T", absAddr.String(), node)
+		}
 		g.Add(node)
 	}
 	addRootNodeToGraph(&g)
@@ -466,6 +471,7 @@ func (n *NodeDestroyableOutput) temporaryValue() bool {
 
 // GraphNodeExecutable
 func (n *NodeDestroyableOutput) Execute(ctx EvalContext, op walkOperation) tfdiags.Diagnostics {
+	debug := logging.IsDebugOrHigher()
 	state := ctx.State()
 	if state == nil {
 		return nil
@@ -505,7 +511,9 @@ func (n *NodeDestroyableOutput) Execute(ctx EvalContext, op walkOperation) tfdia
 			// Should never happen, since we just constructed this right above
 			panic(fmt.Sprintf("planned change for %s could not be encoded: %s", n.Addr, err))
 		}
-		log.Printf("[TRACE] NodeDestroyableOutput: Saving %s change for %s in changeset", change.Action, n.Addr)
+		if debug {
+			log.Printf("[TRACE] NodeDestroyableOutput: Saving %s change for %s in changeset", change.Action, n.Addr)
+		}
 
 		changes.RemoveOutputChange(n.Addr) // remove any existing planned change, if present
 		changes.AppendOutputChange(cs)     // add the new planned change
@@ -527,6 +535,8 @@ func (n *NodeDestroyableOutput) DotNode(name string, opts *dag.DotOpts) *dag.Dot
 }
 
 func (n *NodeApplyableOutput) setValue(state *states.SyncState, changes *plans.ChangesSync, val cty.Value) {
+	debug := logging.IsDebugOrHigher()
+
 	if changes != nil && n.Planning {
 		// if this is a root module, try to get a before value from the state for
 		// the diff
@@ -592,7 +602,9 @@ func (n *NodeApplyableOutput) setValue(state *states.SyncState, changes *plans.C
 			// Should never happen, since we just constructed this right above
 			panic(fmt.Sprintf("planned change for %s could not be encoded: %s", n.Addr, err))
 		}
-		log.Printf("[TRACE] setValue: Saving %s change for %s in changeset", change.Action, n.Addr)
+		if debug {
+			log.Printf("[TRACE] setValue: Saving %s change for %s in changeset", change.Action, n.Addr)
+		}
 		changes.AppendOutputChange(cs) // add the new planned change
 	}
 
@@ -606,12 +618,16 @@ func (n *NodeApplyableOutput) setValue(state *states.SyncState, changes *plans.C
 	// evaluated. Null root outputs are removed entirely, which is always fine
 	// because they can't be referenced by anything else in the configuration.
 	if n.Addr.Module.IsRoot() && val.IsNull() {
-		log.Printf("[TRACE] setValue: Removing %s from state (it is now null)", n.Addr)
+		if debug {
+			log.Printf("[TRACE] setValue: Removing %s from state (it is now null)", n.Addr)
+		}
 		state.RemoveOutputValue(n.Addr)
 		return
 	}
 
-	log.Printf("[TRACE] setValue: Saving value for %s in state", n.Addr)
+	if debug {
+		log.Printf("[TRACE] setValue: Saving value for %s in state", n.Addr)
+	}
 
 	// non-root outputs need to keep sensitive marks for evaluation, but are
 	// not serialized.

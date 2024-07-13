@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 )
 
@@ -413,25 +414,45 @@ func (w *Walker) waitDeps(
 	deps map[Vertex]<-chan struct{},
 	doneCh chan<- bool,
 	cancelCh <-chan struct{}) {
+	debug := logging.IsDebugOrHigher()
 
 	// For each dependency given to us, wait for it to complete
-	for dep, depCh := range deps {
-	DepSatisfied:
-		for {
-			select {
-			case <-depCh:
-				// Dependency satisfied!
-				break DepSatisfied
+	if debug {
+		for dep, depCh := range deps {
+		DebugDepSatisfied:
+			for {
+				select {
+				case <-depCh:
+					// Dependency satisfied!
+					break DebugDepSatisfied
 
-			case <-cancelCh:
-				// Wait cancelled. Note that we didn't satisfy dependencies
-				// so that anything waiting on us also doesn't run.
-				doneCh <- false
-				return
+				case <-cancelCh:
+					// Wait cancelled. Note that we didn't satisfy dependencies
+					// so that anything waiting on us also doesn't run.
+					doneCh <- false
+					return
 
-			case <-time.After(time.Second * 5):
-				log.Printf("[TRACE] dag/walk: vertex %q is waiting for %q",
-					VertexName(v), VertexName(dep))
+				case <-time.After(time.Second * 5):
+					log.Printf("[TRACE] dag/walk: vertex %q is waiting for %q",
+						VertexName(v), VertexName(dep))
+				}
+			}
+		}
+	} else {
+		for _, depCh := range deps {
+		DepSatisfied:
+			for {
+				select {
+				case <-depCh:
+					// Dependency satisfied!
+					break DepSatisfied
+
+				case <-cancelCh:
+					// Wait cancelled. Note that we didn't satisfy dependencies
+					// so that anything waiting on us also doesn't run.
+					doneCh <- false
+					return
+				}
 			}
 		}
 	}

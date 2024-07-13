@@ -10,6 +10,7 @@ import (
 
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/configs"
+	"github.com/opentofu/opentofu/internal/logging"
 )
 
 // OutputTransformer is a GraphTransformer that adds all the outputs
@@ -44,6 +45,8 @@ func (t *OutputTransformer) transform(g *Graph, c *configs.Config) error {
 		return nil
 	}
 
+	debug := logging.IsDebugOrHigher()
+
 	// Transform all the children. We must do this first because
 	// we can reference module outputs and they must show up in the
 	// reference map.
@@ -65,7 +68,9 @@ func (t *OutputTransformer) transform(g *Graph, c *configs.Config) error {
 			Planning:    t.Planning,
 		}
 
-		log.Printf("[TRACE] OutputTransformer: adding %s as %T", o.Name, node)
+		if debug {
+			log.Printf("[TRACE] OutputTransformer: adding %s as %T", o.Name, node)
+		}
 		g.Add(node)
 	}
 

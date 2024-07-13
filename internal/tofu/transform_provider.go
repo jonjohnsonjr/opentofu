@@ -13,6 +13,7 @@ import (
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/configs"
 	"github.com/opentofu/opentofu/internal/dag"
+	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 )
 
@@ -95,6 +96,7 @@ type ProviderTransformer struct {
 }
 
 func (t *ProviderTransformer) Transform(g *Graph) error {
+	debug := logging.IsDebugOrHigher()
 	// We need to find a provider configuration address for each resource
 	// either directly represented by a node or referenced by a node in
 	// the graph, and then create graph edges from provider to provider user
@@ -133,8 +135,10 @@ func (t *ProviderTransformer) Transform(g *Graph) error {
 				// the FQN matches.
 				absPc = p
 
-				if exact {
-					log.Printf("[TRACE] ProviderTransformer: %s is provided by %s exactly", dag.VertexName(v), absPc)
+				if debug {
+					if exact {
+						log.Printf("[TRACE] ProviderTransformer: %s is provided by %s exactly", dag.VertexName(v), absPc)
+					}
 				}
 
 			case addrs.LocalProviderConfig:
@@ -182,9 +186,11 @@ func (t *ProviderTransformer) Transform(g *Graph) error {
 				continue
 			}
 
-			if target != nil {
-				// Providers with configuration will already exist within the graph and can be directly referenced
-				log.Printf("[TRACE] ProviderTransformer: exact match for %s serving %s", p, dag.VertexName(v))
+			if debug {
+				if target != nil {
+					// Providers with configuration will already exist within the graph and can be directly referenced
+					log.Printf("[TRACE] ProviderTransformer: exact match for %s serving %s", p, dag.VertexName(v))
+				}
 			}
 
 			// if we don't have a provider at this level, walk up the path looking for one,
@@ -194,10 +200,14 @@ func (t *ProviderTransformer) Transform(g *Graph) error {
 					key := pp.String()
 					target = m[key]
 					if target != nil {
-						log.Printf("[TRACE] ProviderTransformer: %s uses inherited configuration %s", dag.VertexName(v), pp)
+						if debug {
+							log.Printf("[TRACE] ProviderTransformer: %s uses inherited configuration %s", dag.VertexName(v), pp)
+						}
 						break
 					}
-					log.Printf("[TRACE] ProviderTransformer: looking for %s to serve %s", pp, dag.VertexName(v))
+					if debug {
+						log.Printf("[TRACE] ProviderTransformer: looking for %s to serve %s", pp, dag.VertexName(v))
+					}
 				}
 			}
 
@@ -215,7 +225,9 @@ func (t *ProviderTransformer) Transform(g *Graph) error {
 					},
 				}
 				m[stubAddr.String()] = stub
-				log.Printf("[TRACE] ProviderTransformer: creating init-only node for %s", stubAddr)
+				if debug {
+					log.Printf("[TRACE] ProviderTransformer: creating init-only node for %s", stubAddr)
+				}
 				target = stub
 				g.Add(target)
 			}
@@ -238,7 +250,9 @@ func (t *ProviderTransformer) Transform(g *Graph) error {
 				target = p.Target()
 			}
 
-			log.Printf("[DEBUG] ProviderTransformer: %q (%T) needs %s", dag.VertexName(v), v, dag.VertexName(target))
+			if debug {
+				log.Printf("[DEBUG] ProviderTransformer: %q (%T) needs %s", dag.VertexName(v), v, dag.VertexName(target))
+			}
 			if pv, ok := v.(GraphNodeProviderConsumer); ok {
 				pv.SetProvider(target.ProviderAddr())
 			}
@@ -256,6 +270,7 @@ type ProviderFunctionTransformer struct {
 }
 
 func (t *ProviderFunctionTransformer) Transform(g *Graph) error {
+	debug := logging.IsDebugOrHigher()
 	var diags tfdiags.Diagnostics
 
 	if t.Config == nil {
@@ -325,14 +340,18 @@ func (t *ProviderFunctionTransformer) Transform(g *Graph) error {
 						Alias:    pf.ProviderAlias,
 					}
 
-					log.Printf("[TRACE] ProviderFunctionTransformer: %s in %s is provided by %s", pf, dag.VertexName(v), absPc)
+					if debug {
+						log.Printf("[TRACE] ProviderFunctionTransformer: %s in %s is provided by %s", pf, dag.VertexName(v), absPc)
+					}
 
 					// Lookup provider via full address
 					provider := providers[absPc.String()]
 
 					if provider != nil {
 						// Providers with configuration will already exist within the graph and can be directly referenced
-						log.Printf("[TRACE] ProviderFunctionTransformer: exact match for %s serving %s", absPc, dag.VertexName(v))
+						if debug {
+							log.Printf("[TRACE] ProviderFunctionTransformer: exact match for %s serving %s", absPc, dag.VertexName(v))
+						}
 					} else {
 						// If this provider doesn't need to be configured then we can just
 						// stub it out with an init-only provider node, which will just
@@ -348,7 +367,9 @@ func (t *ProviderFunctionTransformer) Transform(g *Graph) error {
 								},
 							}
 							providers[stubAddr.String()] = stub
-							log.Printf("[TRACE] ProviderFunctionTransformer: creating init-only node for %s", stubAddr)
+							if debug {
+								log.Printf("[TRACE] ProviderFunctionTransformer: creating init-only node for %s", stubAddr)
+							}
 							provider = stub
 							g.Add(provider)
 						}
@@ -360,7 +381,9 @@ func (t *ProviderFunctionTransformer) Transform(g *Graph) error {
 						provider = p.Target()
 					}
 
-					log.Printf("[DEBUG] ProviderFunctionTransformer: %q (%T) needs %s", dag.VertexName(v), v, dag.VertexName(provider))
+					if debug {
+						log.Printf("[DEBUG] ProviderFunctionTransformer: %q (%T) needs %s", dag.VertexName(v), v, dag.VertexName(provider))
+					}
 					g.Connect(dag.BasicEdge(v, provider))
 
 					// Save for future lookups
@@ -439,6 +462,8 @@ type MissingProviderTransformer struct {
 }
 
 func (t *MissingProviderTransformer) Transform(g *Graph) error {
+	debug := logging.IsDebugOrHigher()
+
 	// Initialize factory
 	if t.Concrete == nil {
 		t.Concrete = func(a *NodeAbstractProvider) dag.Vertex {
@@ -471,7 +496,9 @@ func (t *MissingProviderTransformer) Transform(g *Graph) error {
 			continue
 		}
 
-		log.Printf("[DEBUG] adding implicit provider configuration %s, implied first by %s", defaultAddr, dag.VertexName(v))
+		if debug {
+			log.Printf("[DEBUG] adding implicit provider configuration %s, implied first by %s", defaultAddr, dag.VertexName(v))
+		}
 
 		// create the missing top-level provider
 		provider = t.Concrete(&NodeAbstractProvider{
@@ -492,6 +519,8 @@ func (t *MissingProviderTransformer) Transform(g *Graph) error {
 type PruneProviderTransformer struct{}
 
 func (t *PruneProviderTransformer) Transform(g *Graph) error {
+	debug := logging.IsDebugOrHigher()
+
 	for _, v := range g.Vertices() {
 		// We only care about providers
 		_, ok := v.(GraphNodeProvider)
@@ -501,13 +530,17 @@ func (t *PruneProviderTransformer) Transform(g *Graph) error {
 
 		// ProxyProviders will have up edges, but we're now done with them in the graph
 		if _, ok := v.(*graphNodeProxyProvider); ok {
-			log.Printf("[DEBUG] pruning proxy %s", dag.VertexName(v))
+			if debug {
+				log.Printf("[DEBUG] pruning proxy %s", dag.VertexName(v))
+			}
 			g.Remove(v)
 		}
 
 		// Remove providers with no dependencies.
 		if g.UpEdges(v).Len() == 0 {
-			log.Printf("[DEBUG] pruning unused %s", dag.VertexName(v))
+			if debug {
+				log.Printf("[DEBUG] pruning unused %s", dag.VertexName(v))
+			}
 			g.Remove(v)
 		}
 	}
@@ -831,6 +864,8 @@ func (t *ProviderConfigTransformer) addProxyProviders(g *Graph, c *configs.Confi
 }
 
 func (t *ProviderConfigTransformer) attachProviderConfigs(g *Graph) error {
+	debug := logging.IsDebugOrHigher()
+
 	for _, v := range g.Vertices() {
 		// Only care about GraphNodeAttachProvider implementations
 		apn, ok := v.(GraphNodeAttachProvider)
@@ -844,7 +879,9 @@ func (t *ProviderConfigTransformer) attachProviderConfigs(g *Graph) error {
 		// Get the configuration.
 		mc := t.Config.Descendent(addr.Module)
 		if mc == nil {
-			log.Printf("[TRACE] ProviderConfigTransformer: no configuration available for %s", addr.String())
+			if debug {
+				log.Printf("[TRACE] ProviderConfigTransformer: no configuration available for %s", addr.String())
+			}
 			continue
 		}
 
@@ -854,7 +891,9 @@ func (t *ProviderConfigTransformer) attachProviderConfigs(g *Graph) error {
 		// Go through the provider configs to find the matching config
 		for _, p := range mc.Module.ProviderConfigs {
 			if p.Name == localName && p.Alias == addr.Alias {
-				log.Printf("[TRACE] ProviderConfigTransformer: attaching to %q provider configuration from %s", dag.VertexName(v), p.DeclRange)
+				if debug {
+					log.Printf("[TRACE] ProviderConfigTransformer: attaching to %q provider configuration from %s", dag.VertexName(v), p.DeclRange)
+				}
 				apn.AttachProvider(p)
 				break
 			}

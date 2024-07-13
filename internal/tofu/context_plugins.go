@@ -11,6 +11,7 @@ import (
 
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/configs/configschema"
+	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/providers"
 	"github.com/opentofu/opentofu/internal/provisioners"
 )
@@ -67,6 +68,8 @@ func (cp *contextPlugins) NewProvisionerInstance(typ string) (provisioners.Inter
 // to repeatedly call this method with the same address if various different
 // parts of OpenTofu all need the same schema information.
 func (cp *contextPlugins) ProviderSchema(addr addrs.Provider) (providers.ProviderSchema, error) {
+	debug := logging.IsDebugOrHigher()
+
 	// Check the global schema cache first.
 	// This cache is only written by the provider client, and transparently
 	// used by GetProviderSchema, but we check it here because at this point we
@@ -79,11 +82,15 @@ func (cp *contextPlugins) ProviderSchema(addr addrs.Provider) (providers.Provide
 	// BUG This SHORT CIRCUITS the logic below and is not the only code which inserts provider schemas into the cache!!
 	schemas, ok := providers.SchemaCache.Get(addr)
 	if ok {
-		log.Printf("[TRACE] tofu.contextPlugins: Serving provider %q schema from global schema cache", addr)
+		if debug {
+			log.Printf("[TRACE] tofu.contextPlugins: Serving provider %q schema from global schema cache", addr)
+		}
 		return schemas, nil
 	}
 
-	log.Printf("[TRACE] tofu.contextPlugins: Initializing provider %q to read its schema", addr)
+	if debug {
+		log.Printf("[TRACE] tofu.contextPlugins: Initializing provider %q to read its schema", addr)
+	}
 	provider, err := cp.NewProviderInstance(addr)
 	if err != nil {
 		return schemas, fmt.Errorf("failed to instantiate provider %q to obtain schema: %w", addr, err)
@@ -165,7 +172,9 @@ func (cp *contextPlugins) ResourceTypeSchema(providerAddr addrs.Provider, resour
 // to repeatedly call this method with the same name if various different
 // parts of OpenTofu all need the same schema information.
 func (cp *contextPlugins) ProvisionerSchema(typ string) (*configschema.Block, error) {
-	log.Printf("[TRACE] tofu.contextPlugins: Initializing provisioner %q to read its schema", typ)
+	if logging.IsDebugOrHigher() {
+		log.Printf("[TRACE] tofu.contextPlugins: Initializing provisioner %q to read its schema", typ)
+	}
 	provisioner, err := cp.NewProvisionerInstance(typ)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate provisioner %q to obtain schema: %w", typ, err)

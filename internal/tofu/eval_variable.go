@@ -20,18 +20,24 @@ import (
 	"github.com/opentofu/opentofu/internal/configs"
 	"github.com/opentofu/opentofu/internal/lang"
 	"github.com/opentofu/opentofu/internal/lang/marks"
+	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 )
 
 func prepareFinalInputVariableValue(addr addrs.AbsInputVariableInstance, raw *InputValue, cfg *configs.Variable) (cty.Value, tfdiags.Diagnostics) {
+	debug := logging.IsDebugOrHigher()
 	var diags tfdiags.Diagnostics
 
 	convertTy := cfg.ConstraintType
-	log.Printf("[TRACE] prepareFinalInputVariableValue: preparing %s", addr)
+	if debug {
+		log.Printf("[TRACE] prepareFinalInputVariableValue: preparing %s", addr)
+	}
 
 	var defaultVal cty.Value
 	if cfg.Default != cty.NilVal {
-		log.Printf("[TRACE] prepareFinalInputVariableValue: %s has a default value", addr)
+		if debug {
+			log.Printf("[TRACE] prepareFinalInputVariableValue: %s has a default value", addr)
+		}
 		var err error
 		defaultVal, err = convert.Convert(cfg.Default, convertTy)
 		if err != nil {
@@ -76,7 +82,9 @@ func prepareFinalInputVariableValue(addr addrs.AbsInputVariableInstance, raw *In
 
 	given := raw.Value
 	if given == cty.NilVal { // The variable wasn't set at all (even to null)
-		log.Printf("[TRACE] prepareFinalInputVariableValue: %s has no defined value", addr)
+		if debug {
+			log.Printf("[TRACE] prepareFinalInputVariableValue: %s has no defined value", addr)
+		}
 		if cfg.Required() {
 			// NOTE: The CLI layer typically checks for itself whether all of
 			// the required _root_ module variables are set, which would
@@ -159,7 +167,9 @@ func prepareFinalInputVariableValue(addr addrs.AbsInputVariableInstance, raw *In
 	// Nullable variables just appear as null if they were set to null,
 	// regardless of any default value.
 	if val.IsNull() && !cfg.Nullable {
-		log.Printf("[TRACE] prepareFinalInputVariableValue: %s is defined as null", addr)
+		if debug {
+			log.Printf("[TRACE] prepareFinalInputVariableValue: %s is defined as null", addr)
+		}
 		if defaultVal != cty.NilVal {
 			val = defaultVal
 		} else {
@@ -201,11 +211,16 @@ func prepareFinalInputVariableValue(addr addrs.AbsInputVariableInstance, raw *In
 // variable available for use in expression evaluation, such as
 // EvalModuleCallArgument for variables in descendent modules.
 func evalVariableValidations(addr addrs.AbsInputVariableInstance, config *configs.Variable, expr hcl.Expression, ctx EvalContext) (diags tfdiags.Diagnostics) {
+	debug := logging.IsDebugOrHigher()
 	if config == nil || len(config.Validations) == 0 {
-		log.Printf("[TRACE] evalVariableValidations: no validation rules declared for %s, so skipping", addr)
+		if debug {
+			log.Printf("[TRACE] evalVariableValidations: no validation rules declared for %s, so skipping", addr)
+		}
 		return nil
 	}
-	log.Printf("[TRACE] evalVariableValidations: validating %s", addr)
+	if debug {
+		log.Printf("[TRACE] evalVariableValidations: validating %s", addr)
+	}
 
 	checkState := ctx.Checks()
 	if !checkState.ConfigHasChecks(addr.ConfigCheckable()) {
@@ -257,7 +272,9 @@ func evalVariableValidations(addr addrs.AbsInputVariableInstance, config *config
 		result, ruleDiags := evalVariableValidation(validation, hclCtx, addr, config, expr, ix)
 		diags = diags.Append(ruleDiags)
 
-		log.Printf("[TRACE] evalVariableValidations: %s status is now %s", addr, result.Status)
+		if debug {
+			log.Printf("[TRACE] evalVariableValidations: %s status is now %s", addr, result.Status)
+		}
 		if result.Status == checks.StatusFail {
 			checkState.ReportCheckFailure(addr, addrs.InputValidation, ix, result.FailureMessage)
 		} else {
@@ -272,6 +289,8 @@ func evalVariableValidation(validation *configs.CheckRule, hclCtx *hcl.EvalConte
 	const errInvalidCondition = "Invalid variable validation result"
 	const errInvalidValue = "Invalid value for variable"
 	var diags tfdiags.Diagnostics
+
+	debug := logging.IsDebugOrHigher()
 
 	result, moreDiags := validation.Condition.Value(hclCtx)
 	diags = diags.Append(moreDiags)
@@ -328,11 +347,15 @@ func evalVariableValidation(validation *configs.CheckRule, hclCtx *hcl.EvalConte
 		diags = diags.Append(errorDiags)
 	}
 
-	if diags.HasErrors() {
-		log.Printf("[TRACE] evalVariableValidations: %s rule %s check rule evaluation failed: %s", addr, validation.DeclRange, diags.Err().Error())
+	if debug {
+		if diags.HasErrors() {
+			log.Printf("[TRACE] evalVariableValidations: %s rule %s check rule evaluation failed: %s", addr, validation.DeclRange, diags.Err().Error())
+		}
 	}
 	if !result.IsKnown() {
-		log.Printf("[TRACE] evalVariableValidations: %s rule %s condition value is unknown, so skipping validation for now", addr, validation.DeclRange)
+		if debug {
+			log.Printf("[TRACE] evalVariableValidations: %s rule %s condition value is unknown, so skipping validation for now", addr, validation.DeclRange)
+		}
 
 		return checkResult{Status: checks.StatusUnknown}, diags // We'll wait until we've learned more, then.
 	}

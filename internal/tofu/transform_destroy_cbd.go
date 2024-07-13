@@ -11,6 +11,7 @@ import (
 
 	"github.com/opentofu/opentofu/internal/configs"
 	"github.com/opentofu/opentofu/internal/dag"
+	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/states"
 )
 
@@ -40,6 +41,8 @@ type ForcedCBDTransformer struct {
 }
 
 func (t *ForcedCBDTransformer) Transform(g *Graph) error {
+	debug := logging.IsDebugOrHigher()
+
 	for _, v := range g.Vertices() {
 		dn, ok := v.(GraphNodeDestroyerCBD)
 		if !ok {
@@ -49,8 +52,10 @@ func (t *ForcedCBDTransformer) Transform(g *Graph) error {
 		if !dn.CreateBeforeDestroy() {
 			// If there are no CBD decendent (dependent nodes), then we
 			// do nothing here.
-			if !t.hasCBDDescendent(g, v) {
-				log.Printf("[TRACE] ForcedCBDTransformer: %q (%T) has no CBD descendent, so skipping", dag.VertexName(v), v)
+			if !t.hasCBDDescendent(g, v, debug) {
+				if debug {
+					log.Printf("[TRACE] ForcedCBDTransformer: %q (%T) has no CBD descendent, so skipping", dag.VertexName(v), v)
+				}
 				continue
 			}
 
@@ -58,7 +63,9 @@ func (t *ForcedCBDTransformer) Transform(g *Graph) error {
 			// and we need to auto-upgrade this node to CBD. We do this because
 			// a CBD node depending on non-CBD will result in cycles. To avoid this,
 			// we always attempt to upgrade it.
-			log.Printf("[TRACE] ForcedCBDTransformer: forcing create_before_destroy on for %q (%T)", dag.VertexName(v), v)
+			if debug {
+				log.Printf("[TRACE] ForcedCBDTransformer: forcing create_before_destroy on for %q (%T)", dag.VertexName(v), v)
+			}
 			if err := dn.ModifyCreateBeforeDestroy(true); err != nil {
 				return fmt.Errorf(
 					"%s: must have create before destroy enabled because "+
@@ -67,7 +74,9 @@ func (t *ForcedCBDTransformer) Transform(g *Graph) error {
 					dag.VertexName(v), err)
 			}
 		} else {
-			log.Printf("[TRACE] ForcedCBDTransformer: %q (%T) already has create_before_destroy set", dag.VertexName(v), v)
+			if debug {
+				log.Printf("[TRACE] ForcedCBDTransformer: %q (%T) already has create_before_destroy set", dag.VertexName(v), v)
+			}
 		}
 	}
 	return nil
@@ -75,7 +84,7 @@ func (t *ForcedCBDTransformer) Transform(g *Graph) error {
 
 // hasCBDDescendent returns true if any descendent (node that depends on this)
 // has CBD set.
-func (t *ForcedCBDTransformer) hasCBDDescendent(g *Graph, v dag.Vertex) bool {
+func (t *ForcedCBDTransformer) hasCBDDescendent(g *Graph, v dag.Vertex, debug bool) bool {
 	s, _ := g.Descendents(v)
 	if s == nil {
 		return true
@@ -89,7 +98,9 @@ func (t *ForcedCBDTransformer) hasCBDDescendent(g *Graph, v dag.Vertex) bool {
 
 		if dn.CreateBeforeDestroy() {
 			// some descendent is CreateBeforeDestroy, so we need to follow suit
-			log.Printf("[TRACE] ForcedCBDTransformer: %q has CBD descendent %q", dag.VertexName(v), dag.VertexName(ov))
+			if debug {
+				log.Printf("[TRACE] ForcedCBDTransformer: %q has CBD descendent %q", dag.VertexName(v), dag.VertexName(ov))
+			}
 			return true
 		}
 	}

@@ -23,6 +23,7 @@ import (
 	"github.com/opentofu/opentofu/internal/instances"
 	"github.com/opentofu/opentofu/internal/lang"
 	"github.com/opentofu/opentofu/internal/lang/marks"
+	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/plans"
 	"github.com/opentofu/opentofu/internal/providers"
 	"github.com/opentofu/opentofu/internal/provisioners"
@@ -157,7 +158,9 @@ func (ctx *BuiltinEvalContext) InitProvider(addr addrs.AbsProviderConfig) (provi
 		}
 	}
 
-	log.Printf("[TRACE] BuiltinEvalContext: Initialized %q provider for %s", addr.String(), addr)
+	if logging.IsDebugOrHigher() {
+		log.Printf("[TRACE] BuiltinEvalContext: Initialized %q provider for %s", addr.String(), addr)
+	}
 	ctx.ProviderCache[key] = p
 
 	return p, nil
@@ -556,7 +559,9 @@ func (ctx *BuiltinEvalContext) SetRootModuleArgument(addr addrs.InputVariable, v
 	ctx.VariableValuesLock.Lock()
 	defer ctx.VariableValuesLock.Unlock()
 
-	log.Printf("[TRACE] BuiltinEvalContext: Storing final value for variable %s", addr.Absolute(addrs.RootModuleInstance))
+	if logging.IsDebugOrHigher() {
+		log.Printf("[TRACE] BuiltinEvalContext: Storing final value for variable %s", addr.Absolute(addrs.RootModuleInstance))
+	}
 	key := addrs.RootModuleInstance.String()
 	args := ctx.VariableValues[key]
 	if args == nil {
@@ -575,7 +580,9 @@ func (ctx *BuiltinEvalContext) SetModuleCallArgument(callAddr addrs.ModuleCallIn
 	}
 
 	childPath := callAddr.ModuleInstance(ctx.PathValue)
-	log.Printf("[TRACE] BuiltinEvalContext: Storing final value for variable %s", varAddr.Absolute(childPath))
+	if logging.IsDebugOrHigher() {
+		log.Printf("[TRACE] BuiltinEvalContext: Storing final value for variable %s", varAddr.Absolute(childPath))
+	}
 	key := childPath.String()
 	args := ctx.VariableValues[key]
 	if args == nil {

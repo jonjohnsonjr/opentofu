@@ -12,6 +12,7 @@ import (
 	"github.com/opentofu/opentofu/internal/configs"
 	"github.com/opentofu/opentofu/internal/configs/configschema"
 	"github.com/opentofu/opentofu/internal/dag"
+	"github.com/opentofu/opentofu/internal/logging"
 )
 
 // GraphNodeAttachResourceSchema is an interface implemented by node types
@@ -59,6 +60,8 @@ func (t *AttachSchemaTransformer) Transform(g *Graph) error {
 		return fmt.Errorf("AttachSchemaTransformer used with nil Plugins")
 	}
 
+	debug := logging.IsDebugOrHigher()
+
 	for _, v := range g.Vertices() {
 
 		if tv, ok := v.(GraphNodeAttachResourceSchema); ok {
@@ -75,7 +78,9 @@ func (t *AttachSchemaTransformer) Transform(g *Graph) error {
 				log.Printf("[ERROR] AttachSchemaTransformer: No resource schema available for %s", addr)
 				continue
 			}
-			log.Printf("[TRACE] AttachSchemaTransformer: attaching resource schema to %s", dag.VertexName(v))
+			if debug {
+				log.Printf("[TRACE] AttachSchemaTransformer: attaching resource schema to %s", dag.VertexName(v))
+			}
 			tv.AttachResourceSchema(schema, version)
 		}
 
@@ -89,7 +94,9 @@ func (t *AttachSchemaTransformer) Transform(g *Graph) error {
 				log.Printf("[ERROR] AttachSchemaTransformer: No provider config schema available for %s", providerAddr)
 				continue
 			}
-			log.Printf("[TRACE] AttachSchemaTransformer: attaching provider config schema to %s", dag.VertexName(v))
+			if debug {
+				log.Printf("[TRACE] AttachSchemaTransformer: attaching provider config schema to %s", dag.VertexName(v))
+			}
 			tv.AttachProviderConfigSchema(schema)
 		}
 
@@ -104,7 +111,9 @@ func (t *AttachSchemaTransformer) Transform(g *Graph) error {
 					log.Printf("[ERROR] AttachSchemaTransformer: No schema available for provisioner %q on %q", name, dag.VertexName(v))
 					continue
 				}
-				log.Printf("[TRACE] AttachSchemaTransformer: attaching provisioner %q config schema to %s", name, dag.VertexName(v))
+				if debug {
+					log.Printf("[TRACE] AttachSchemaTransformer: attaching provisioner %q config schema to %s", name, dag.VertexName(v))
+				}
 				tv.AttachProvisionerSchema(name, schema)
 			}
 		}

@@ -16,6 +16,7 @@ import (
 	"github.com/opentofu/opentofu/internal/configs"
 	"github.com/opentofu/opentofu/internal/dag"
 	"github.com/opentofu/opentofu/internal/lang"
+	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 )
 
@@ -69,6 +70,7 @@ func (n *nodeExpandLocal) References() []*addrs.Reference {
 }
 
 func (n *nodeExpandLocal) DynamicExpand(ctx EvalContext) (*Graph, error) {
+	debug := logging.IsDebugOrHigher()
 	var g Graph
 	expander := ctx.InstanceExpander()
 	for _, module := range expander.ExpandModule(n.Module) {
@@ -76,7 +78,9 @@ func (n *nodeExpandLocal) DynamicExpand(ctx EvalContext) (*Graph, error) {
 			Addr:   n.Addr.Absolute(module),
 			Config: n.Config,
 		}
-		log.Printf("[TRACE] Expanding local: adding %s as %T", o.Addr.String(), o)
+		if debug {
+			log.Printf("[TRACE] Expanding local: adding %s as %T", o.Addr.String(), o)
+		}
 		g.Add(o)
 	}
 	addRootNodeToGraph(&g)

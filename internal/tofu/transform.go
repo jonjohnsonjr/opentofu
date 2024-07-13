@@ -33,14 +33,18 @@ type graphTransformerMulti struct {
 }
 
 func (t *graphTransformerMulti) Transform(g *Graph) error {
+	debug := logging.IsDebugOrHigher()
 	var lastStepStr string
 	for _, t := range t.Transforms {
-		log.Printf("[TRACE] (graphTransformerMulti) Executing graph transform %T", t)
+		if debug {
+			log.Printf("[TRACE] (graphTransformerMulti) Executing graph transform %T", t)
+		}
+
 		if err := t.Transform(g); err != nil {
 			return err
 		}
 
-		if logging.CurrentLogLevel() == "TRACE" {
+		if debug {
 			if thisStepStr := g.StringWithNodeTypes(); thisStepStr != lastStepStr {
 				log.Printf("[TRACE] (graphTransformerMulti) Completed graph transform %T with new graph:\n%s  ------", t, logging.Indent(thisStepStr))
 				lastStepStr = thisStepStr

@@ -35,16 +35,20 @@ func (b *BasicGraphBuilder) Build(path addrs.ModuleInstance) (*Graph, tfdiags.Di
 	var diags tfdiags.Diagnostics
 	g := &Graph{Path: path}
 
+	debug := logging.IsDebugOrHigher()
+
 	var lastStepStr string
 	for _, step := range b.Steps {
 		if step == nil {
 			continue
 		}
-		log.Printf("[TRACE] Executing graph transform %T", step)
+		if debug {
+			log.Printf("[TRACE] Executing graph transform %T", step)
+		}
 
 		err := step.Transform(g)
 
-		if logging.CurrentLogLevel() == "TRACE" {
+		if debug {
 			if thisStepStr := g.StringWithNodeTypes(); thisStepStr != lastStepStr {
 				log.Printf("[TRACE] Completed graph transform %T with new graph:\n%s  ------", step, logging.Indent(thisStepStr))
 				lastStepStr = thisStepStr

@@ -44,6 +44,8 @@ func (g *Graph) walk(walker GraphWalker) tfdiags.Diagnostics {
 	// The callbacks for enter/exiting a graph
 	ctx := walker.EvalContext()
 
+	debug := logging.IsDebugOrHigher()
+
 	// We explicitly create the panicHandler before
 	// spawning many go routines for vertex evaluation
 	// to minimize the performance impact of capturing
@@ -56,7 +58,9 @@ func (g *Graph) walk(walker GraphWalker) tfdiags.Diagnostics {
 		// separately in the case of a panic.
 		defer panicHandler()
 
-		log.Printf("[TRACE] vertex %q: starting visit (%T)", dag.VertexName(v), v)
+		if debug {
+			log.Printf("[TRACE] vertex %q: starting visit (%T)", dag.VertexName(v), v)
+		}
 
 		defer func() {
 			if diags.HasErrors() {
@@ -66,9 +70,13 @@ func (g *Graph) walk(walker GraphWalker) tfdiags.Diagnostics {
 						log.Printf("[ERROR] vertex %q error: %s", dag.VertexName(v), desc.Summary)
 					}
 				}
-				log.Printf("[TRACE] vertex %q: visit complete, with errors", dag.VertexName(v))
+				if debug {
+					log.Printf("[TRACE] vertex %q: visit complete, with errors", dag.VertexName(v))
+				}
 			} else {
-				log.Printf("[TRACE] vertex %q: visit complete", dag.VertexName(v))
+				if debug {
+					log.Printf("[TRACE] vertex %q: visit complete", dag.VertexName(v))
+				}
 			}
 		}()
 
@@ -91,12 +99,16 @@ func (g *Graph) walk(walker GraphWalker) tfdiags.Diagnostics {
 
 		// If the node is dynamically expanded, then expand it
 		if ev, ok := v.(GraphNodeDynamicExpandable); ok {
-			log.Printf("[TRACE] vertex %q: expanding dynamic subgraph", dag.VertexName(v))
+			if debug {
+				log.Printf("[TRACE] vertex %q: expanding dynamic subgraph", dag.VertexName(v))
+			}
 
 			g, err := ev.DynamicExpand(vertexCtx)
 			diags = diags.Append(err)
 			if diags.HasErrors() {
-				log.Printf("[TRACE] vertex %q: failed expanding dynamic subgraph: %s", dag.VertexName(v), err)
+				if debug {
+					log.Printf("[TRACE] vertex %q: failed expanding dynamic subgraph: %s", dag.VertexName(v), err)
+				}
 				return
 			}
 			if g != nil {
@@ -123,7 +135,9 @@ func (g *Graph) walk(walker GraphWalker) tfdiags.Diagnostics {
 				}
 
 				// Walk the subgraph
-				log.Printf("[TRACE] vertex %q: entering dynamic subgraph", dag.VertexName(v))
+				if debug {
+					log.Printf("[TRACE] vertex %q: entering dynamic subgraph", dag.VertexName(v))
+				}
 				subDiags := g.walk(walker)
 				diags = diags.Append(subDiags)
 				if subDiags.HasErrors() {
@@ -131,12 +145,18 @@ func (g *Graph) walk(walker GraphWalker) tfdiags.Diagnostics {
 					for _, d := range subDiags {
 						errs = append(errs, d.Description().Summary)
 					}
-					log.Printf("[TRACE] vertex %q: dynamic subgraph encountered errors: %s", dag.VertexName(v), strings.Join(errs, ","))
+					if debug {
+						log.Printf("[TRACE] vertex %q: dynamic subgraph encountered errors: %s", dag.VertexName(v), strings.Join(errs, ","))
+					}
 					return
 				}
-				log.Printf("[TRACE] vertex %q: dynamic subgraph completed successfully", dag.VertexName(v))
+				if debug {
+					log.Printf("[TRACE] vertex %q: dynamic subgraph completed successfully", dag.VertexName(v))
+				}
 			} else {
-				log.Printf("[TRACE] vertex %q: produced no dynamic subgraph", dag.VertexName(v))
+				if debug {
+					log.Printf("[TRACE] vertex %q: produced no dynamic subgraph", dag.VertexName(v))
+				}
 			}
 		}
 		return

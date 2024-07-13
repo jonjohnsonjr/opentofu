@@ -17,6 +17,7 @@ import (
 	"github.com/opentofu/opentofu/internal/dag"
 	"github.com/opentofu/opentofu/internal/instances"
 	"github.com/opentofu/opentofu/internal/lang"
+	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 )
 
@@ -186,7 +187,9 @@ func (n *nodeModuleVariable) References() []*addrs.Reference {
 
 // GraphNodeExecutable
 func (n *nodeModuleVariable) Execute(ctx EvalContext, op walkOperation) (diags tfdiags.Diagnostics) {
-	log.Printf("[TRACE] nodeModuleVariable: evaluating %s", n.Addr)
+	if logging.IsDebugOrHigher() {
+		log.Printf("[TRACE] nodeModuleVariable: evaluating %s", n.Addr)
+	}
 
 	var val cty.Value
 	var err error

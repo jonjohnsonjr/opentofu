@@ -9,6 +9,7 @@ import (
 	"log"
 
 	"github.com/opentofu/opentofu/internal/dag"
+	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/states"
 )
 
@@ -35,9 +36,13 @@ type AttachStateTransformer struct {
 }
 
 func (t *AttachStateTransformer) Transform(g *Graph) error {
+	debug := logging.IsDebugOrHigher()
+
 	// If no state, then nothing to do
 	if t.State == nil {
-		log.Printf("[DEBUG] Not attaching any node states: overall state is nil")
+		if debug {
+			log.Printf("[DEBUG] Not attaching any node states: overall state is nil")
+		}
 		return nil
 	}
 
@@ -51,7 +56,9 @@ func (t *AttachStateTransformer) Transform(g *Graph) error {
 
 		rs := t.State.Resource(addr.ContainingResource())
 		if rs == nil {
-			log.Printf("[DEBUG] Resource state not found for node %q, instance %s", dag.VertexName(v), addr)
+			if debug {
+				log.Printf("[DEBUG] Resource state not found for node %q, instance %s", dag.VertexName(v), addr)
+			}
 			continue
 		}
 
@@ -60,7 +67,9 @@ func (t *AttachStateTransformer) Transform(g *Graph) error {
 			// We don't actually need this here, since we'll attach the whole
 			// resource state, but we still check because it'd be weird
 			// for the specific instance we're attaching to not to exist.
-			log.Printf("[DEBUG] Resource instance state not found for node %q, instance %s", dag.VertexName(v), addr)
+			if debug {
+				log.Printf("[DEBUG] Resource instance state not found for node %q, instance %s", dag.VertexName(v), addr)
+			}
 			continue
 		}
 

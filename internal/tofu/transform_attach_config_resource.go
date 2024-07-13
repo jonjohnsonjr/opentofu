@@ -11,6 +11,7 @@ import (
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/configs"
 	"github.com/opentofu/opentofu/internal/dag"
+	"github.com/opentofu/opentofu/internal/logging"
 )
 
 // GraphNodeAttachResourceConfig is an interface that must be implemented by nodes
@@ -33,6 +34,7 @@ type AttachResourceConfigTransformer struct {
 }
 
 func (t *AttachResourceConfigTransformer) Transform(g *Graph) error {
+	debug := logging.IsDebugOrHigher()
 
 	// Go through and find GraphNodeAttachResource
 	for _, v := range g.Vertices() {
@@ -48,7 +50,9 @@ func (t *AttachResourceConfigTransformer) Transform(g *Graph) error {
 		// Get the configuration.
 		config := t.Config.Descendent(addr.Module)
 		if config == nil {
-			log.Printf("[TRACE] AttachResourceConfigTransformer: %q (%T) has no configuration available", dag.VertexName(v), v)
+			if debug {
+				log.Printf("[TRACE] AttachResourceConfigTransformer: %q (%T) has no configuration available", dag.VertexName(v), v)
+			}
 			continue
 		}
 		var m map[string]*configs.Resource
@@ -61,14 +65,20 @@ func (t *AttachResourceConfigTransformer) Transform(g *Graph) error {
 		}
 		coord := addr.Resource.String()
 		if r, ok := m[coord]; ok && r.Addr() == addr.Resource {
-			log.Printf("[TRACE] AttachResourceConfigTransformer: attaching to %q (%T) config from %#v", dag.VertexName(v), v, r.DeclRange)
+			if debug {
+				log.Printf("[TRACE] AttachResourceConfigTransformer: attaching to %q (%T) config from %#v", dag.VertexName(v), v, r.DeclRange)
+			}
 			arn.AttachResourceConfig(r)
 			if gnapmc, ok := v.(GraphNodeAttachProviderMetaConfigs); ok {
-				log.Printf("[TRACE] AttachResourceConfigTransformer: attaching provider meta configs to %s", dag.VertexName(v))
+				if debug {
+					log.Printf("[TRACE] AttachResourceConfigTransformer: attaching provider meta configs to %s", dag.VertexName(v))
+				}
 				if config.Module.ProviderMetas != nil {
 					gnapmc.AttachProviderMetaConfigs(config.Module.ProviderMetas)
 				} else {
-					log.Printf("[TRACE] AttachResourceConfigTransformer: no provider meta configs available to attach to %s", dag.VertexName(v))
+					if debug {
+						log.Printf("[TRACE] AttachResourceConfigTransformer: no provider meta configs available to attach to %s", dag.VertexName(v))
+					}
 				}
 			}
 		}

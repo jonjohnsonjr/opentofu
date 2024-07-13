@@ -16,6 +16,7 @@ import (
 	"github.com/opentofu/opentofu/internal/configs/configschema"
 	"github.com/opentofu/opentofu/internal/dag"
 	"github.com/opentofu/opentofu/internal/lang"
+	"github.com/opentofu/opentofu/internal/logging"
 )
 
 // GraphNodeReferenceable must be implemented by any node that represents
@@ -117,6 +118,7 @@ type GraphNodeReferenceOutside interface {
 type ReferenceTransformer struct{}
 
 func (t *ReferenceTransformer) Transform(g *Graph) error {
+	debug := logging.IsDebugOrHigher()
 	// Build a reference map so we can efficiently look up the references
 	vs := g.Vertices()
 	m := NewReferenceMap(vs)
@@ -130,13 +132,15 @@ func (t *ReferenceTransformer) Transform(g *Graph) error {
 		}
 
 		parents := m.References(v)
-		parentsDbg := make([]string, len(parents))
-		for i, v := range parents {
-			parentsDbg[i] = dag.VertexName(v)
+		if debug {
+			parentsDbg := make([]string, len(parents))
+			for i, v := range parents {
+				parentsDbg[i] = dag.VertexName(v)
+			}
+			log.Printf(
+				"[DEBUG] ReferenceTransformer: %q references: %v",
+				dag.VertexName(v), parentsDbg)
 		}
-		log.Printf(
-			"[DEBUG] ReferenceTransformer: %q references: %v",
-			dag.VertexName(v), parentsDbg)
 
 		for _, parent := range parents {
 			// A destroy plan relies solely on the state, so we only need to
@@ -149,7 +153,7 @@ func (t *ReferenceTransformer) Transform(g *Graph) error {
 
 			if !graphNodesAreResourceInstancesInDifferentInstancesOfSameModule(v, parent) {
 				g.Connect(dag.BasicEdge(v, parent))
-			} else {
+			} else if debug {
 				log.Printf("[TRACE] ReferenceTransformer: skipping %s => %s inter-module-instance dependency", dag.VertexName(v), dag.VertexName(parent))
 			}
 		}
@@ -186,6 +190,7 @@ type attachDataResourceDependsOnTransformer struct {
 }
 
 func (t attachDataResourceDependsOnTransformer) Transform(g *Graph) error {
+	debug := logging.IsDebugOrHigher()
 	// First we need to make a map of referenceable addresses to their vertices.
 	// This is very similar to what's done in ReferenceTransformer, but we keep
 	// implementation separate as they may need to change independently.
@@ -217,7 +222,9 @@ func (t attachDataResourceDependsOnTransformer) Transform(g *Graph) error {
 			res = append(res, d)
 		}
 
-		log.Printf("[TRACE] attachDataDependenciesTransformer: %s depends on %s", depender.ResourceAddr(), res)
+		if debug {
+			log.Printf("[TRACE] attachDataDependenciesTransformer: %s depends on %s", depender.ResourceAddr(), res)
+		}
 		depender.AttachDataResourceDependsOn(res, fromModule)
 	}
 
@@ -231,6 +238,7 @@ type AttachDependenciesTransformer struct {
 }
 
 func (t AttachDependenciesTransformer) Transform(g *Graph) error {
+	debug := logging.IsDebugOrHigher()
 	for _, v := range g.Vertices() {
 		attacher, ok := v.(GraphNodeAttachDependencies)
 		if !ok {
@@ -273,7 +281,9 @@ func (t AttachDependenciesTransformer) Transform(g *Graph) error {
 			return deps[i].String() < deps[j].String()
 		})
 
-		log.Printf("[TRACE] AttachDependenciesTransformer: %s depends on %s", attacher.ResourceAddr(), deps)
+		if debug {
+			log.Printf("[TRACE] AttachDependenciesTransformer: %s depends on %s", attacher.ResourceAddr(), deps)
+		}
 		attacher.AttachDependencies(deps)
 	}
 
@@ -343,7 +353,10 @@ func (m ReferenceMap) addReference(path addrs.Module, current dag.Vertex, ref *a
 		case addrs.ProviderFunction:
 			return nil
 		default:
-			log.Printf("[INFO] ReferenceTransformer: reference not found: %q", subject)
+			// TODO: This logs a lot.
+			if logging.IsDebugOrHigher() || logging.CurrentLogLevel() == "INFO" {
+				log.Printf("[INFO] ReferenceTransformer: reference not found: %q", subject)
+			}
 			return nil
 		}
 		key = m.mapKey(path, subject)

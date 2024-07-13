@@ -1,5 +1,7 @@
 module github.com/opentofu/opentofu
 
+// replace github.com/hashicorp/go-hclog => ../../hashicorp/go-hclog
+
 require (
 	cloud.google.com/go/kms v1.15.5
 	cloud.google.com/go/storage v1.36.0

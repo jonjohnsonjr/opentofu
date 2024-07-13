@@ -12,6 +12,7 @@ import (
 	"github.com/opentofu/opentofu/internal/checks"
 	"github.com/opentofu/opentofu/internal/configs"
 	"github.com/opentofu/opentofu/internal/instances"
+	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/plans"
 	"github.com/opentofu/opentofu/internal/refactoring"
 	"github.com/opentofu/opentofu/internal/states"
@@ -47,7 +48,9 @@ type graphWalkOpts struct {
 }
 
 func (c *Context) walk(graph *Graph, operation walkOperation, opts *graphWalkOpts) (*ContextGraphWalker, tfdiags.Diagnostics) {
-	log.Printf("[DEBUG] Starting graph walk: %s", operation.String())
+	if logging.IsDebugOrHigher() {
+		log.Printf("[DEBUG] Starting graph walk: %s", operation.String())
+	}
 
 	walker := c.graphWalker(operation, opts)
 

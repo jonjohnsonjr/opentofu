@@ -11,6 +11,7 @@ import (
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/configs"
 	"github.com/opentofu/opentofu/internal/dag"
+	"github.com/opentofu/opentofu/internal/logging"
 )
 
 // ConfigTransformer is a GraphTransformer that adds all the resources
@@ -61,11 +62,13 @@ func (t *ConfigTransformer) Transform(g *Graph) error {
 		return nil
 	}
 
+	debug := logging.IsDebugOrHigher()
+
 	// Start the transformation process
-	return t.transform(g, t.Config, t.generateConfigPathForImportTargets)
+	return t.transform(g, t.Config, t.generateConfigPathForImportTargets, debug)
 }
 
-func (t *ConfigTransformer) transform(g *Graph, config *configs.Config, generateConfigPath string) error {
+func (t *ConfigTransformer) transform(g *Graph, config *configs.Config, generateConfigPath string, debug bool) error {
 	// If no config, do nothing
 	if config == nil {
 		return nil
@@ -78,13 +81,13 @@ func (t *ConfigTransformer) transform(g *Graph, config *configs.Config, generate
 	}
 
 	// Add our resources
-	if err := t.transformSingle(g, config, generateConfigPath); err != nil {
+	if err := t.transformSingle(g, config, generateConfigPath, debug); err != nil {
 		return err
 	}
 
 	// Transform all the children without generating config.
 	for _, c := range config.Children {
-		if err := t.transform(g, c, ""); err != nil {
+		if err := t.transform(g, c, "", debug); err != nil {
 			return err
 		}
 	}
@@ -92,10 +95,12 @@ func (t *ConfigTransformer) transform(g *Graph, config *configs.Config, generate
 	return nil
 }
 
-func (t *ConfigTransformer) transformSingle(g *Graph, config *configs.Config, generateConfigPath string) error {
+func (t *ConfigTransformer) transformSingle(g *Graph, config *configs.Config, generateConfigPath string, debug bool) error {
 	path := config.Path
 	module := config.Module
-	log.Printf("[TRACE] ConfigTransformer: Starting for path: %v", path)
+	if debug {
+		log.Printf("[TRACE] ConfigTransformer: Starting for path: %v", path)
+	}
 
 	allResources := make([]*configs.Resource, 0, len(module.ManagedResources)+len(module.DataResources))
 	for _, r := range module.ManagedResources {

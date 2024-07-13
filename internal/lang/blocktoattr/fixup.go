@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hcldec"
 	"github.com/opentofu/opentofu/internal/configs/configschema"
+	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/zclconf/go-cty/cty"
 )
 
@@ -43,7 +44,9 @@ func FixUpBlockAttrs(body hcl.Body, schema *configschema.Block) hcl.Body {
 		// we don't have any context for the resource name or type, but
 		// hopefully this could help locate the evaluation in the logs if there
 		// were a problem
-		log.Println("[DEBUG] skipping FixUpBlockAttrs")
+		if logging.IsDebugOrHigher() {
+			log.Println("[DEBUG] skipping FixUpBlockAttrs")
+		}
 		return body
 	}
 

@@ -11,6 +11,7 @@ import (
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/configs"
 	"github.com/opentofu/opentofu/internal/dag"
+	"github.com/opentofu/opentofu/internal/logging"
 )
 
 // ModuleExpansionTransformer is a GraphTransformer that adds graph nodes
@@ -32,6 +33,8 @@ type ModuleExpansionTransformer struct {
 }
 
 func (t *ModuleExpansionTransformer) Transform(g *Graph) error {
+	debug := logging.IsDebugOrHigher()
+
 	t.closers = make(map[string]*nodeCloseModule)
 
 	// Construct a tree for fast lookups of Vertices based on their ModulePath.
@@ -47,7 +50,7 @@ func (t *ModuleExpansionTransformer) Transform(g *Graph) error {
 	// processing, but any descendent modules do. We'll process them
 	// recursively using t.transform.
 	for _, cfg := range t.Config.Children {
-		err := t.transform(g, cfg, tree, nil)
+		err := t.transform(g, cfg, tree, nil, debug)
 		if err != nil {
 			return err
 		}
@@ -95,7 +98,7 @@ func (t *ModuleExpansionTransformer) Transform(g *Graph) error {
 	return nil
 }
 
-func (t *ModuleExpansionTransformer) transform(g *Graph, c *configs.Config, tree *pathTree, parentNode dag.Vertex) error {
+func (t *ModuleExpansionTransformer) transform(g *Graph, c *configs.Config, tree *pathTree, parentNode dag.Vertex, debug bool) error {
 	_, call := c.Path.Call()
 	modCall := c.Parent.Module.ModuleCalls[call.Name]
 
@@ -110,10 +113,14 @@ func (t *ModuleExpansionTransformer) transform(g *Graph, c *configs.Config, tree
 	}
 
 	g.Add(expander)
-	log.Printf("[TRACE] ModuleExpansionTransformer: Added %s as %T", c.Path, expander)
+	if debug {
+		log.Printf("[TRACE] ModuleExpansionTransformer: Added %s as %T", c.Path, expander)
+	}
 
 	if parentNode != nil {
-		log.Printf("[TRACE] ModuleExpansionTransformer: %s must wait for expansion of %s", dag.VertexName(expander), dag.VertexName(parentNode))
+		if debug {
+			log.Printf("[TRACE] ModuleExpansionTransformer: %s must wait for expansion of %s", dag.VertexName(expander), dag.VertexName(parentNode))
+		}
 		g.Connect(dag.BasicEdge(expander, parentNode))
 	}
 
@@ -145,14 +152,16 @@ func (t *ModuleExpansionTransformer) transform(g *Graph, c *configs.Config, tree
 		}
 
 		if path.Equal(c.Path) {
-			log.Printf("[TRACE] ModuleExpansionTransformer: %s must wait for expansion of %s", dag.VertexName(childV), c.Path)
+			if debug {
+				log.Printf("[TRACE] ModuleExpansionTransformer: %s must wait for expansion of %s", dag.VertexName(childV), c.Path)
+			}
 			g.Connect(dag.BasicEdge(childV, expander))
 		}
 	}
 
 	// Also visit child modules, recursively.
 	for _, cc := range c.Children {
-		if err := t.transform(g, cc, tree, expander); err != nil {
+		if err := t.transform(g, cc, tree, expander, debug); err != nil {
 			return err
 		}
 	}

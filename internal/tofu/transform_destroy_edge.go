@@ -10,6 +10,7 @@ import (
 
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/dag"
+	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/plans"
 )
 
@@ -88,6 +89,8 @@ destroyA ------------->  destroyB
 // destroyed. This is where these cross-provider edges are still required to
 // ensure the correct order.
 func (t *DestroyEdgeTransformer) tryInterProviderDestroyEdge(g *Graph, from, to dag.Vertex) {
+	debug := logging.IsDebugOrHigher()
+
 	e := dag.BasicEdge(from, to)
 	g.Connect(e)
 
@@ -132,13 +135,17 @@ func (t *DestroyEdgeTransformer) tryInterProviderDestroyEdge(g *Graph, from, to 
 	// The cycles we are looking for only appears between providers, so don't
 	// waste time checking for cycles if both nodes use the same provider.
 	if fromProvider != toProvider && len(g.Cycles()) > 0 {
-		log.Printf("[DEBUG] DestroyEdgeTransformer: skipping inter-provider edge %s->%s which creates a cycle",
-			dag.VertexName(from), dag.VertexName(to))
+		if debug {
+			log.Printf("[DEBUG] DestroyEdgeTransformer: skipping inter-provider edge %s->%s which creates a cycle",
+				dag.VertexName(from), dag.VertexName(to))
+		}
 		g.RemoveEdge(e)
 	}
 }
 
 func (t *DestroyEdgeTransformer) Transform(g *Graph) error {
+	debug := logging.IsDebugOrHigher()
+
 	// Build a map of what is being destroyed (by address string) to
 	// the list of destroyers.
 	destroyers := make(map[string][]GraphNodeDestroyer)
@@ -163,7 +170,9 @@ func (t *DestroyEdgeTransformer) Transform(g *Graph) error {
 			addr := *addrP
 
 			key := addr.String()
-			log.Printf("[TRACE] DestroyEdgeTransformer: %q (%T) destroys %s", dag.VertexName(n), v, key)
+			if debug {
+				log.Printf("[TRACE] DestroyEdgeTransformer: %q (%T) destroys %s", dag.VertexName(n), v, key)
+			}
 			destroyers[key] = append(destroyers[key], n)
 
 			resAddr := addr.ContainingResource().Config().String()
@@ -210,9 +219,11 @@ func (t *DestroyEdgeTransformer) Transform(g *Graph) error {
 			a_d := d.(dag.Vertex)
 			a := v
 
-			log.Printf(
-				"[TRACE] DestroyEdgeTransformer: connecting creator %q with destroyer %q",
-				dag.VertexName(a), dag.VertexName(a_d))
+			if debug {
+				log.Printf(
+					"[TRACE] DestroyEdgeTransformer: connecting creator %q with destroyer %q",
+					dag.VertexName(a), dag.VertexName(a_d))
+			}
 
 			g.Connect(dag.BasicEdge(a, a_d))
 		}
@@ -229,10 +240,14 @@ func (t *DestroyEdgeTransformer) Transform(g *Graph) error {
 			for _, resAddr := range ri.StateDependencies() {
 				for _, desDep := range destroyersByResource[resAddr.String()] {
 					if !graphNodesAreResourceInstancesInDifferentInstancesOfSameModule(c, desDep) {
-						log.Printf("[TRACE] DestroyEdgeTransformer: %s has stored dependency of %s\n", dag.VertexName(c), dag.VertexName(desDep))
+						if debug {
+							log.Printf("[TRACE] DestroyEdgeTransformer: %s has stored dependency of %s\n", dag.VertexName(c), dag.VertexName(desDep))
+						}
 						g.Connect(dag.BasicEdge(c, desDep))
 					} else {
-						log.Printf("[TRACE] DestroyEdgeTransformer: skipping %s => %s inter-module-instance dependency\n", dag.VertexName(c), dag.VertexName(desDep))
+						if debug {
+							log.Printf("[TRACE] DestroyEdgeTransformer: skipping %s => %s inter-module-instance dependency\n", dag.VertexName(c), dag.VertexName(desDep))
+						}
 					}
 				}
 			}
@@ -250,10 +265,14 @@ func (t *DestroyEdgeTransformer) Transform(g *Graph) error {
 			for _, resAddr := range ri.StateDependencies() {
 				for _, desDep := range destroyersByResource[resAddr.String()] {
 					if !graphNodesAreResourceInstancesInDifferentInstancesOfSameModule(desDep, des) {
-						log.Printf("[TRACE] DestroyEdgeTransformer: %s has stored dependency of %s\n", dag.VertexName(desDep), dag.VertexName(des))
+						if debug {
+							log.Printf("[TRACE] DestroyEdgeTransformer: %s has stored dependency of %s\n", dag.VertexName(desDep), dag.VertexName(des))
+						}
 						t.tryInterProviderDestroyEdge(g, desDep, des)
 					} else {
-						log.Printf("[TRACE] DestroyEdgeTransformer: skipping %s => %s inter-module-instance dependency\n", dag.VertexName(desDep), dag.VertexName(des))
+						if debug {
+							log.Printf("[TRACE] DestroyEdgeTransformer: skipping %s => %s inter-module-instance dependency\n", dag.VertexName(desDep), dag.VertexName(des))
+						}
 					}
 				}
 
@@ -262,10 +281,14 @@ func (t *DestroyEdgeTransformer) Transform(g *Graph) error {
 				// themselves, make the connection directly from the creator.
 				for _, createDep := range creators[resAddr.String()] {
 					if !graphNodesAreResourceInstancesInDifferentInstancesOfSameModule(createDep, des) {
-						log.Printf("[DEBUG] DestroyEdgeTransformer2: %s has stored dependency of %s\n", dag.VertexName(createDep), dag.VertexName(des))
+						if debug {
+							log.Printf("[DEBUG] DestroyEdgeTransformer2: %s has stored dependency of %s\n", dag.VertexName(createDep), dag.VertexName(des))
+						}
 						t.tryInterProviderDestroyEdge(g, createDep, des)
 					} else {
-						log.Printf("[TRACE] DestroyEdgeTransformer2: skipping %s => %s inter-module-instance dependency\n", dag.VertexName(createDep), dag.VertexName(des))
+						if debug {
+							log.Printf("[TRACE] DestroyEdgeTransformer2: skipping %s => %s inter-module-instance dependency\n", dag.VertexName(createDep), dag.VertexName(des))
+						}
 					}
 				}
 			}
@@ -292,6 +315,8 @@ func (t *pruneUnusedNodesTransformer) Transform(g *Graph) error {
 	if t.skip {
 		return nil
 	}
+
+	debug := logging.IsDebugOrHigher()
 
 	// We need a reverse depth first walk of modules, processing them in order
 	// from the leaf modules to the root. This allows us to remove unneeded
@@ -375,7 +400,9 @@ func (t *pruneUnusedNodesTransformer) Transform(g *Graph) error {
 					return
 				}
 
-				log.Printf("[DEBUG] pruneUnusedNodes: %s is no longer needed, removing", dag.VertexName(n))
+				if debug {
+					log.Printf("[DEBUG] pruneUnusedNodes: %s is no longer needed, removing", dag.VertexName(n))
+				}
 				g.Remove(n)
 				removed = true
 

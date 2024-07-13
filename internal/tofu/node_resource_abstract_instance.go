@@ -19,6 +19,7 @@ import (
 	"github.com/opentofu/opentofu/internal/configs/configschema"
 	"github.com/opentofu/opentofu/internal/encryption"
 	"github.com/opentofu/opentofu/internal/instances"
+	"github.com/opentofu/opentofu/internal/logging"
 	"github.com/opentofu/opentofu/internal/plans"
 	"github.com/opentofu/opentofu/internal/plans/objchange"
 	"github.com/opentofu/opentofu/internal/providers"
@@ -133,7 +134,9 @@ func (n *NodeAbstractResourceInstance) AttachResourceState(s *states.Resource) {
 		log.Printf("[WARN] attaching nil state to %s", n.Addr)
 		return
 	}
-	log.Printf("[TRACE] NodeAbstractResourceInstance.AttachResourceState for %s", n.Addr)
+	if logging.IsDebugOrHigher() {
+		log.Printf("[TRACE] NodeAbstractResourceInstance.AttachResourceState for %s", n.Addr)
+	}
 	n.instanceState = s.Instance(n.Addr.Resource.Key)
 	n.storedProviderConfig = s.ProviderConfig
 }
@@ -150,10 +153,14 @@ func (n *NodeAbstractResourceInstance) readDiff(ctx EvalContext, providerSchema 
 		return nil, fmt.Errorf("provider does not support resource type %q", addr.Resource.Resource.Type)
 	}
 
+	debug := logging.IsDebugOrHigher()
+
 	gen := states.CurrentGen
 	csrc := changes.GetResourceInstanceChange(addr, gen)
 	if csrc == nil {
-		log.Printf("[TRACE] readDiff: No planned change recorded for %s", n.Addr)
+		if debug {
+			log.Printf("[TRACE] readDiff: No planned change recorded for %s", n.Addr)
+		}
 		return nil, nil
 	}
 
@@ -162,7 +169,9 @@ func (n *NodeAbstractResourceInstance) readDiff(ctx EvalContext, providerSchema 
 		return nil, fmt.Errorf("failed to decode planned changes for %s: %w", n.Addr, err)
 	}
 
-	log.Printf("[TRACE] readDiff: Read %s change from plan for %s", change.Action, n.Addr)
+	if debug {
+		log.Printf("[TRACE] readDiff: Read %s change from plan for %s", change.Action, n.Addr)
+	}
 
 	return change, nil
 }
@@ -272,17 +281,21 @@ func (n *NodeAbstractResourceInstance) writeResourceInstanceStateDeposed(ctx Eva
 // one of the two wrappers to be explicit about which of the instance's
 // objects you are intending to write.
 func (n *NodeAbstractResourceInstance) writeResourceInstanceStateImpl(ctx EvalContext, deposedKey states.DeposedKey, obj *states.ResourceInstanceObject, targetState phaseState) error {
+	debug := logging.IsDebugOrHigher()
+
 	absAddr := n.Addr
 	_, providerSchema, err := n.getProvider(ctx, n.ResolvedProvider)
 	if err != nil {
 		return err
 	}
 	logFuncName := "NodeAbstractResouceInstance.writeResourceInstanceState"
-	if deposedKey == states.NotDeposed {
-		log.Printf("[TRACE] %s to %s for %s", logFuncName, targetState, absAddr)
-	} else {
-		logFuncName = "NodeAbstractResouceInstance.writeResourceInstanceStateDeposed"
-		log.Printf("[TRACE] %s to %s for %s (deposed key %s)", logFuncName, targetState, absAddr, deposedKey)
+	if debug {
+		if deposedKey == states.NotDeposed {
+			log.Printf("[TRACE] %s to %s for %s", logFuncName, targetState, absAddr)
+		} else {
+			logFuncName = "NodeAbstractResouceInstance.writeResourceInstanceStateDeposed"
+			log.Printf("[TRACE] %s to %s for %s (deposed key %s)", logFuncName, targetState, absAddr, deposedKey)
+		}
 	}
 
 	var state *states.SyncState
@@ -322,14 +335,18 @@ func (n *NodeAbstractResourceInstance) writeResourceInstanceStateImpl(ctx EvalCo
 	if obj == nil || obj.Value.IsNull() {
 		// No need to encode anything: we'll just write it directly.
 		write(nil)
-		log.Printf("[TRACE] %s: removing state object for %s", logFuncName, absAddr)
+		if debug {
+			log.Printf("[TRACE] %s: removing state object for %s", logFuncName, absAddr)
+		}
 		return nil
 	}
 
-	if obj != nil {
-		log.Printf("[TRACE] %s: writing state object for %s", logFuncName, absAddr)
-	} else {
-		log.Printf("[TRACE] %s: removing state object for %s", logFuncName, absAddr)
+	if debug {
+		if obj != nil {
+			log.Printf("[TRACE] %s: writing state object for %s", logFuncName, absAddr)
+		} else {
+			log.Printf("[TRACE] %s: removing state object for %s", logFuncName, absAddr)
+		}
 	}
 
 	schema, currentVersion := providerSchema.SchemaForResourceAddr(absAddr.ContainingResource().Resource)
@@ -528,10 +545,15 @@ func (n *NodeAbstractResourceInstance) writeChange(ctx EvalContext, change *plan
 	}
 
 	changes.AppendResourceInstanceChange(csrc)
-	if deposedKey == states.NotDeposed {
-		log.Printf("[TRACE] writeChange: recorded %s change for %s", change.Action, n.Addr)
-	} else {
-		log.Printf("[TRACE] writeChange: recorded %s change for %s deposed object %s", change.Action, n.Addr, deposedKey)
+
+	debug := logging.IsDebugOrHigher()
+
+	if debug {
+		if deposedKey == states.NotDeposed {
+			log.Printf("[TRACE] writeChange: recorded %s change for %s", change.Action, n.Addr)
+		} else {
+			log.Printf("[TRACE] writeChange: recorded %s change for %s deposed object %s", change.Action, n.Addr, deposedKey)
+		}
 	}
 
 	return nil
@@ -541,10 +563,15 @@ func (n *NodeAbstractResourceInstance) writeChange(ctx EvalContext, change *plan
 func (n *NodeAbstractResourceInstance) refresh(ctx EvalContext, deposedKey states.DeposedKey, state *states.ResourceInstanceObject) (*states.ResourceInstanceObject, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 	absAddr := n.Addr
-	if deposedKey == states.NotDeposed {
-		log.Printf("[TRACE] NodeAbstractResourceInstance.refresh for %s", absAddr)
-	} else {
-		log.Printf("[TRACE] NodeAbstractResourceInstance.refresh for %s (deposed object %s)", absAddr, deposedKey)
+
+	debug := logging.IsDebugOrHigher()
+
+	if debug {
+		if deposedKey == states.NotDeposed {
+			log.Printf("[TRACE] NodeAbstractResourceInstance.refresh for %s", absAddr)
+		} else {
+			log.Printf("[TRACE] NodeAbstractResourceInstance.refresh for %s (deposed object %s)", absAddr, deposedKey)
+		}
 	}
 	provider, providerSchema, err := n.getProvider(ctx, n.ResolvedProvider)
 	if err != nil {
@@ -552,7 +579,9 @@ func (n *NodeAbstractResourceInstance) refresh(ctx EvalContext, deposedKey state
 	}
 	// If we have no state, we don't do any refreshing
 	if state == nil {
-		log.Printf("[DEBUG] refresh: %s: no state, so not refreshing", absAddr)
+		if debug {
+			log.Printf("[DEBUG] refresh: %s: no state, so not refreshing", absAddr)
+		}
 		return state, diags
 	}
 
@@ -779,7 +808,10 @@ func (n *NodeAbstractResourceInstance) plan(
 		priorVal = cty.NullVal(schema.ImpliedType())
 	}
 
-	log.Printf("[TRACE] Re-validating config for %q", n.Addr)
+	debug := logging.IsDebugOrHigher()
+	if debug {
+		log.Printf("[TRACE] Re-validating config for %q", n.Addr)
+	}
 	// Allow the provider to validate the final set of values.  The config was
 	// statically validated early on, but there may have been unknown values
 	// which the provider could not validate at the time.
@@ -1146,7 +1178,9 @@ func (n *NodeAbstractResourceInstance) plan(
 	if plannedChange != nil {
 		prevChange := *plannedChange
 		if prevChange.Action.IsReplace() && action == plans.Create {
-			log.Printf("[TRACE] plan: %s treating Create change as %s change to match with earlier plan", n.Addr, prevChange.Action)
+			if debug {
+				log.Printf("[TRACE] plan: %s treating Create change as %s change to match with earlier plan", n.Addr, prevChange.Action)
+			}
 			action = prevChange.Action
 			priorVal = prevChange.Before
 		}
@@ -1468,7 +1502,10 @@ func (n *NodeAbstractResourceInstance) readDataSource(ctx EvalContext, configVal
 	var pvm []cty.PathValueMarks
 	configVal, pvm = configVal.UnmarkDeepWithPaths()
 
-	log.Printf("[TRACE] readDataSource: Re-validating config for %s", n.Addr)
+	debug := logging.IsDebugOrHigher()
+	if debug {
+		log.Printf("[TRACE] readDataSource: Re-validating config for %s", n.Addr)
+	}
 	validateResp := provider.ValidateDataResourceConfig(
 		providers.ValidateDataResourceConfigRequest{
 			TypeName: n.Addr.ContainingResource().Resource.Type,
@@ -1482,7 +1519,9 @@ func (n *NodeAbstractResourceInstance) readDataSource(ctx EvalContext, configVal
 
 	// If we get down here then our configuration is complete and we're read
 	// to actually call the provider to read the data.
-	log.Printf("[TRACE] readDataSource: %s configuration is complete, so reading from provider", n.Addr)
+	if debug {
+		log.Printf("[TRACE] readDataSource: %s configuration is complete, so reading from provider", n.Addr)
+	}
 
 	diags = diags.Append(ctx.Hook(func(h Hook) (HookAction, error) {
 		return h.PreApply(n.Addr, states.CurrentGen, plans.Read, cty.NullVal(configVal.Type()), configVal)
@@ -1692,16 +1731,21 @@ func (n *NodeAbstractResourceInstance) planDataSource(ctx EvalContext, checkRule
 			return nil, plannedNewState, keyData, diags
 		}
 
+		debug := logging.IsDebugOrHigher()
 		var reason plans.ResourceInstanceChangeActionReason
 		switch {
 		case !configKnown:
-			log.Printf("[TRACE] planDataSource: %s configuration not fully known yet, so deferring to apply phase", n.Addr)
+			if debug {
+				log.Printf("[TRACE] planDataSource: %s configuration not fully known yet, so deferring to apply phase", n.Addr)
+			}
 			reason = plans.ResourceInstanceReadBecauseConfigUnknown
 		case depsPending:
 			// NOTE: depsPending can be true at the same time as configKnown
 			// is false; configKnown takes precedence because it's more
 			// specific.
-			log.Printf("[TRACE] planDataSource: %s configuration is fully known, at least one dependency has changes pending", n.Addr)
+			if debug {
+				log.Printf("[TRACE] planDataSource: %s configuration is fully known, at least one dependency has changes pending", n.Addr)
+			}
 			reason = plans.ResourceInstanceReadBecauseDependencyPending
 		}
 
@@ -1985,19 +2029,27 @@ func (n *NodeAbstractResourceInstance) applyDataSource(ctx EvalContext, planned 
 func (n *NodeAbstractResourceInstance) evalApplyProvisioners(ctx EvalContext, state *states.ResourceInstanceObject, createNew bool, when configs.ProvisionerWhen) tfdiags.Diagnostics {
 	var diags tfdiags.Diagnostics
 
+	debug := logging.IsDebugOrHigher()
+
 	if state == nil {
-		log.Printf("[TRACE] evalApplyProvisioners: %s has no state, so skipping provisioners", n.Addr)
+		if debug {
+			log.Printf("[TRACE] evalApplyProvisioners: %s has no state, so skipping provisioners", n.Addr)
+		}
 		return nil
 	}
 	if when == configs.ProvisionerWhenCreate && !createNew {
 		// If we're not creating a new resource, then don't run provisioners
-		log.Printf("[TRACE] evalApplyProvisioners: %s is not freshly-created, so no provisioning is required", n.Addr)
+		if debug {
+			log.Printf("[TRACE] evalApplyProvisioners: %s is not freshly-created, so no provisioning is required", n.Addr)
+		}
 		return nil
 	}
 	if state.Status == states.ObjectTainted {
 		// No point in provisioning an object that is already tainted, since
 		// it's going to get recreated on the next apply anyway.
-		log.Printf("[TRACE] evalApplyProvisioners: %s is tainted, so skipping provisioning", n.Addr)
+		if debug {
+			log.Printf("[TRACE] evalApplyProvisioners: %s is tainted, so skipping provisioning", n.Addr)
+		}
 		return nil
 	}
 
@@ -2019,7 +2071,9 @@ func (n *NodeAbstractResourceInstance) evalApplyProvisioners(ctx EvalContext, st
 	// if we have one, otherwise we just output it.
 	diags = diags.Append(n.applyProvisioners(ctx, state, when, provs))
 	if diags.HasErrors() {
-		log.Printf("[TRACE] evalApplyProvisioners: %s provisioning failed, but we will continue anyway at the caller's request", n.Addr)
+		if debug {
+			log.Printf("[TRACE] evalApplyProvisioners: %s provisioning failed, but we will continue anyway at the caller's request", n.Addr)
+		}
 		return diags
 	}
 
@@ -2075,8 +2129,11 @@ func (n *NodeAbstractResourceInstance) applyProvisioners(ctx EvalContext, state 
 		baseConn = n.Config.Managed.Connection.Config
 	}
 
+	debug := logging.IsDebugOrHigher()
 	for _, prov := range provs {
-		log.Printf("[TRACE] applyProvisioners: provisioning %s with %q", n.Addr, prov.Type)
+		if debug {
+			log.Printf("[TRACE] applyProvisioners: provisioning %s with %q", n.Addr, prov.Type)
+		}
 
 		// Get the provisioner
 		provisioner, err := ctx.Provisioner(prov.Type)
@@ -2255,11 +2312,14 @@ func (n *NodeAbstractResourceInstance) apply(
 		state = &states.ResourceInstanceObject{}
 	}
 
+	debug := logging.IsDebugOrHigher()
 	if change.Action == plans.NoOp {
 		// If this is a no-op change then we don't want to actually change
 		// anything, so we'll just echo back the state we were given and
 		// let our internal checks and updates proceed.
-		log.Printf("[TRACE] NodeAbstractResourceInstance.apply: skipping %s because it has no planned action", n.Addr)
+		if debug {
+			log.Printf("[TRACE] NodeAbstractResourceInstance.apply: skipping %s because it has no planned action", n.Addr)
+		}
 		return state, diags
 	}
 
@@ -2316,7 +2376,9 @@ func (n *NodeAbstractResourceInstance) apply(
 		return nil, diags
 	}
 
-	log.Printf("[DEBUG] %s: applying the planned %s change", n.Addr, change.Action)
+	if debug {
+		log.Printf("[DEBUG] %s: applying the planned %s change", n.Addr, change.Action)
+	}
 
 	// If our config, Before or After value contain any marked values,
 	// ensure those are stripped out before sending
