@@ -9,30 +9,23 @@ package dag
 type Edge interface {
 	Source() Vertex
 	Target() Vertex
-
-	Hashable
 }
 
 // BasicEdge returns an Edge implementation that simply tracks the source
 // and target given as-is.
 func BasicEdge(source, target Vertex) Edge {
-	return &basicEdge{S: source, T: target}
+	return &basicEdge{source, target}
 }
 
 // basicEdge is a basic implementation of Edge that has the source and
 // target vertex.
-type basicEdge struct {
-	S, T Vertex
-}
 
-func (e *basicEdge) Hashcode() interface{} {
-	return [...]interface{}{e.S, e.T}
-}
+type basicEdge [2]interface{}
 
 func (e *basicEdge) Source() Vertex {
-	return e.S
+	return e[0]
 }
 
 func (e *basicEdge) Target() Vertex {
-	return e.T
+	return e[1]
 }

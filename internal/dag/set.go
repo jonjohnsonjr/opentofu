@@ -19,30 +19,22 @@ type Hashable interface {
 
 // hashcode returns the hashcode used for set elements.
 func hashcode(v interface{}) interface{} {
-	if h, ok := v.(Hashable); ok {
-		return h.Hashcode()
-	}
-
 	return v
 }
 
 // Add adds an item to the set
 func (s Set) Add(v interface{}) {
-	if h, ok := v.(Hashable); ok {
-		s[h.Hashcode()] = v
-	} else {
-		s[v] = v
-	}
+	s[v] = v
 }
 
 // Delete removes an item from the set.
 func (s Set) Delete(v interface{}) {
-	delete(s, hashcode(v))
+	delete(s, v)
 }
 
 // Include returns true/false of whether a value is in the set.
 func (s Set) Include(v interface{}) bool {
-	_, ok := s[hashcode(v)]
+	_, ok := s[v]
 	return ok
 }
 
