@@ -7,6 +7,7 @@ package dag
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -102,17 +103,42 @@ func (g *AcyclicGraph) TransitiveReduction() {
 	// v such that the edge (u,v) exists (v is a direct descendant of u).
 	//
 	// For each v-prime reachable from v, remove the edge (u, v-prime).
-	for _, u := range g.Vertices() {
-		uTargets := g.downEdgesNoCopy(u)
+	vertices := g.Vertices()
+	for _, u := range vertices {
+		start := g.downEdgesNoCopy(u)
 
-		g.DepthFirstWalk(g.downEdgesNoCopy(u), func(v Vertex, d int) error {
-			shared := uTargets.Intersection(g.downEdgesNoCopy(v))
+		// TODO: Does inlining actually help?
+		seen := make(map[Vertex]struct{}, len(vertices))
+		frontier := make([]Vertex, 0, len(start))
+		for _, v := range start {
+			frontier = append(frontier, v)
+		}
+
+		for len(frontier) > 0 {
+			// Pop the current vertex
+			// depth first, the frontier is used like a stack
+			n := len(frontier)
+			current := frontier[n-1]
+			frontier = frontier[:n-1]
+
+			// Check if we've seen this already and return...
+			if _, ok := seen[current]; ok {
+				continue
+			}
+			seen[current] = struct{}{}
+
+			// Visit the current node
+			shared := start.Intersection(g.downEdgesNoCopy(current))
 			for _, vPrime := range shared {
 				g.RemoveEdge(BasicEdge(u, vPrime))
 			}
 
-			return nil
-		})
+			edges := g.downEdgesNoCopy(current)
+			frontier = slices.Grow(frontier, len(edges))
+			for _, v := range edges {
+				frontier = append(frontier, v)
+			}
+		}
 	}
 }
 
@@ -261,7 +287,7 @@ const (
 // DepthFirstWalk does a depth-first walk of the graph starting from
 // the vertices in start.
 func (g *AcyclicGraph) DepthFirstWalk(start Set, f DepthWalkFunc) error {
-	return g.walk(depthFirst|downOrder, false, start, f)
+	return g.depthFirstWalk(start, f)
 }
 
 // ReverseDepthFirstWalk does a depth-first walk _up_ the graph starting from
@@ -342,6 +368,43 @@ func (g *AcyclicGraph) walk(order walkType, test bool, start Set, f DepthWalkFun
 		} else {
 			frontier = appendNext(frontier, edges, current.Depth+1)
 		}
+	}
+	return nil
+}
+
+// Setting test to true will walk sets of vertices in sorted order for
+// deterministic testing.
+func (g *AcyclicGraph) depthFirstWalk(start Set, f DepthWalkFunc) error {
+	seen := make(map[Vertex]struct{})
+	frontier := make([]vertexAtDepth, 0, len(start))
+	for _, v := range start {
+		frontier = append(frontier, vertexAtDepth{
+			Vertex: v,
+			Depth:  0,
+		})
+	}
+
+	for len(frontier) > 0 {
+		// Pop the current vertex
+		// depth first, the frontier is used like a stack
+		n := len(frontier)
+		current := frontier[n-1]
+		frontier = frontier[:n-1]
+
+		// Check if we've seen this already and return...
+		if _, ok := seen[current.Vertex]; ok {
+			continue
+		}
+		seen[current.Vertex] = struct{}{}
+
+		// Visit the current node
+		if err := f(current.Vertex, current.Depth); err != nil {
+			return err
+		}
+
+		edges := g.downEdgesNoCopy(current.Vertex)
+
+		frontier = appendNext(frontier, edges, current.Depth+1)
 	}
 	return nil
 }
