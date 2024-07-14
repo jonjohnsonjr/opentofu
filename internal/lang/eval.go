@@ -147,10 +147,11 @@ func (s *Scope) EvalSelfBlock(body hcl.Body, self cty.Value, schema *configschem
 	vals["path"] = cty.ObjectVal(pathAttrs)
 	vals["terraform"] = cty.ObjectVal(terraformAttrs)
 
+	fns := s.Functions()
 	ctx := &hcl.EvalContext{
 		Variables: vals,
 		// TODO consider if any provider functions make sense here
-		Functions: s.Functions(),
+		Functions: *fns,
 	}
 
 	val, decDiags := hcldec.Decode(body, schema.DecoderSpec(), ctx)
@@ -313,12 +314,8 @@ func (s *Scope) evalContext(parent *hcl.EvalContext, refs []*addrs.Reference, se
 	// Calling NewChild() on a nil parent will
 	// produce an EvalContext with no parent.
 	ctx := parent.NewChild()
-	ctx.Functions = make(map[string]function.Function, len(fns))
+	ctx.Functions = *fns
 	ctx.Variables = make(map[string]cty.Value)
-
-	for name, fn := range fns {
-		ctx.Functions[name] = fn
-	}
 
 	// Easy path for common case where there are no references at all.
 	if len(refs) == 0 {
@@ -344,6 +341,8 @@ func (s *Scope) evalContext(parent *hcl.EvalContext, refs []*addrs.Reference, se
 	// that's redundant in the process of populating our values map.
 	varBuilder := s.newEvalVarBuilder()
 
+	providerFns := map[string]function.Function{}
+
 	for _, ref := range refs {
 		if ref.Subject == addrs.Self {
 			diags.Append(varBuilder.putSelfValue(selfAddr, ref))
@@ -352,12 +351,14 @@ func (s *Scope) evalContext(parent *hcl.EvalContext, refs []*addrs.Reference, se
 
 		if subj, ok := ref.Subject.(addrs.ProviderFunction); ok {
 			// Inject function directly into context
-			if _, ok := ctx.Functions[subj.String()]; !ok {
-				fn, fnDiags := s.ProviderFunctions(subj, ref.SourceRange)
-				diags = diags.Append(fnDiags)
+			if _, ok := (*fns)[subj.String()]; !ok {
+				if _, ok := providerFns[subj.String()]; !ok {
+					fn, fnDiags := s.ProviderFunctions(subj, ref.SourceRange)
+					diags = diags.Append(fnDiags)
 
-				if !fnDiags.HasErrors() {
-					ctx.Functions[subj.String()] = *fn
+					if !fnDiags.HasErrors() {
+						providerFns[subj.String()] = *fn
+					}
 				}
 			}
 
@@ -366,6 +367,13 @@ func (s *Scope) evalContext(parent *hcl.EvalContext, refs []*addrs.Reference, se
 
 		diags = diags.Append(varBuilder.putValueBySubject(ref))
 	}
+
+	if len(providerFns) > 0 {
+		cached := cachedFuncs.providerFunctions(fns, providerFns)
+		fns = &cached
+	}
+
+	ctx.Functions = *fns
 
 	varBuilder.buildAllVariablesInto(ctx.Variables)
 

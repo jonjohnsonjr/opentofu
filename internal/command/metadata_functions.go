@@ -54,7 +54,7 @@ func (c *MetadataFunctionsCommand) Run(args []string) int {
 	scope := &lang.Scope{}
 	funcs := scope.Functions()
 	filteredFuncs := make(map[string]function.Function)
-	for k, v := range funcs {
+	for k, v := range *funcs {
 		if isIgnoredFunction(k) {
 			continue
 		}

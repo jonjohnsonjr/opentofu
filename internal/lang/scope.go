@@ -57,7 +57,7 @@ type Scope struct {
 	PureOnly bool
 
 	funcsLock sync.Mutex
-	funcs     map[string]function.Function
+	funcs     *map[string]function.Function
 
 	// activeExperiments is an optional set of experiments that should be
 	// considered as active in the module that this scope will be used for.

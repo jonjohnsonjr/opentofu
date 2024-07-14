@@ -8,6 +8,8 @@ package lang
 import (
 	"fmt"
 	"maps"
+	"sync"
+	"time"
 
 	"github.com/hashicorp/hcl/v2/ext/tryfunc"
 	ctyyaml "github.com/zclconf/go-cty-yaml"
@@ -143,76 +145,83 @@ const CoreNamespace = addrs.FunctionNamespaceCore + "::"
 
 // Functions returns the set of functions that should be used to when evaluating
 // expressions in the receiving scope.
-func (s *Scope) Functions() map[string]function.Function {
+func (s *Scope) Functions() *map[string]function.Function {
 	s.funcsLock.Lock()
+	defer s.funcsLock.Unlock()
 	if s.funcs == nil {
-		// Some of our functions are just directly the cty stdlib functions.
-		// Others are implemented in the subdirectory "funcs" here in this
-		// repository. New functions should generally start out their lives
-		// in the "funcs" directory and potentially graduate to cty stdlib
-		// later if the functionality seems to be something domain-agnostic
-		// that would be useful to all applications using cty functions.
-		s.funcs = maps.Clone(coreFunctions)
+		s.funcs = cachedFuncs.functions(s)
+	}
+	return s.funcs
+}
 
-		s.funcs["file"] = funcs.MakeFileFunc(s.BaseDir, false)
-		s.funcs["fileexists"] = funcs.MakeFileExistsFunc(s.BaseDir)
-		s.funcs["fileset"] = funcs.MakeFileSetFunc(s.BaseDir)
-		s.funcs["filebase64"] = funcs.MakeFileFunc(s.BaseDir, true)
-		s.funcs["filebase64sha256"] = funcs.MakeFileBase64Sha256Func(s.BaseDir)
-		s.funcs["filebase64sha512"] = funcs.MakeFileBase64Sha512Func(s.BaseDir)
-		s.funcs["filemd5"] = funcs.MakeFileMd5Func(s.BaseDir)
-		s.funcs["filesha1"] = funcs.MakeFileSha1Func(s.BaseDir)
-		s.funcs["filesha256"] = funcs.MakeFileSha256Func(s.BaseDir)
-		s.funcs["filesha512"] = funcs.MakeFileSha512Func(s.BaseDir)
+func functions(s *Scope) map[string]function.Function {
+	fmt.Printf("Functions(%t, %t, %q, %s)\n", s.PureOnly, s.ConsoleMode, s.BaseDir, s.PlanTimestamp)
+	// Some of our functions are just directly the cty stdlib functions.
+	// Others are implemented in the subdirectory "funcs" here in this
+	// repository. New functions should generally start out their lives
+	// in the "funcs" directory and potentially graduate to cty stdlib
+	// later if the functionality seems to be something domain-agnostic
+	// that would be useful to all applications using cty functions.
+	fns := make(map[string]function.Function, 2*(len(coreFunctions)+14))
+	maps.Copy(fns, coreFunctions)
 
-		s.funcs["templatefile"] = funcs.MakeTemplateFileFunc(s.BaseDir, func() map[string]function.Function {
-			// The templatefile function prevents recursive calls to itself
-			// by copying this map and overwriting the "templatefile" entry.
-			return s.funcs
-		})
+	fns["file"] = funcs.MakeFileFunc(s.BaseDir, false)
+	fns["fileexists"] = funcs.MakeFileExistsFunc(s.BaseDir)
+	fns["fileset"] = funcs.MakeFileSetFunc(s.BaseDir)
+	fns["filebase64"] = funcs.MakeFileFunc(s.BaseDir, true)
+	fns["filebase64sha256"] = funcs.MakeFileBase64Sha256Func(s.BaseDir)
+	fns["filebase64sha512"] = funcs.MakeFileBase64Sha512Func(s.BaseDir)
+	fns["filemd5"] = funcs.MakeFileMd5Func(s.BaseDir)
+	fns["filesha1"] = funcs.MakeFileSha1Func(s.BaseDir)
+	fns["filesha256"] = funcs.MakeFileSha256Func(s.BaseDir)
+	fns["filesha512"] = funcs.MakeFileSha512Func(s.BaseDir)
 
-		// Registers "templatestring" function in function map.
-		s.funcs["templatestring"] = funcs.MakeTemplateStringFunc(s.BaseDir, func() map[string]function.Function {
-			// This anonymous function returns the existing map of functions for initialization.
-			return s.funcs
-		})
+	fns["templatefile"] = funcs.MakeTemplateFileFunc(s.BaseDir, func() map[string]function.Function {
+		// The templatefile function prevents recursive calls to itself
+		// by copying this map and overwriting the "templatefile" entry.
+		return fns
+	})
 
-		if s.ConsoleMode {
-			// The type function is only available in OpenTofu console.
-			s.funcs["type"] = funcs.TypeFunc
-		}
+	// Registers "templatestring" function in function map.
+	fns["templatestring"] = funcs.MakeTemplateStringFunc(s.BaseDir, func() map[string]function.Function {
+		// This anonymous function returns the existing map of functions for initialization.
+		return fns
+	})
 
-		if !s.ConsoleMode {
-			// The plantimestamp function doesn't make sense in the OpenTofu
-			// console.
-			s.funcs["plantimestamp"] = funcs.MakeStaticTimestampFunc(s.PlanTimestamp)
-		}
+	if s.ConsoleMode {
+		// The type function is only available in OpenTofu console.
+		fns["type"] = funcs.TypeFunc
+	}
 
-		if s.PureOnly {
-			// Force our few impure functions to return unknown so that we
-			// can defer evaluating them until a later pass.
-			for _, name := range impureFunctions {
-				s.funcs[name] = function.Unpredictable(s.funcs[name])
-			}
-		}
+	if !s.ConsoleMode {
+		// The plantimestamp function doesn't make sense in the OpenTofu
+		// console.
+		fns["plantimestamp"] = funcs.MakeStaticTimestampFunc(s.PlanTimestamp)
+	}
 
-		coreNames := make([]string, 0, len(s.funcs))
-		// Add a description to each function and parameter based on the
-		// contents of descriptionList.
-		// One must create a matching description entry whenever a new
-		// function is introduced.
-		for name, f := range s.funcs {
-			s.funcs[name] = funcs.WithDescription(name, f)
-			coreNames = append(coreNames, name)
-		}
-		// Copy all stdlib funcs into core:: namespace
-		for _, name := range coreNames {
-			s.funcs[CoreNamespace+name] = s.funcs[name]
+	if s.PureOnly {
+		// Force our few impure functions to return unknown so that we
+		// can defer evaluating them until a later pass.
+		for _, name := range impureFunctions {
+			fns[name] = function.Unpredictable(fns[name])
 		}
 	}
-	s.funcsLock.Unlock()
 
-	return s.funcs
+	coreNames := make([]string, 0, len(fns))
+	// Add a description to each function and parameter based on the
+	// contents of descriptionList.
+	// One must create a matching description entry whenever a new
+	// function is introduced.
+	for name, f := range fns {
+		fns[name] = funcs.WithDescription(name, f)
+		coreNames = append(coreNames, name)
+	}
+	// Copy all stdlib funcs into core:: namespace
+	for _, name := range coreNames {
+		fns[CoreNamespace+name] = fns[name]
+	}
+
+	return fns
 }
 
 // experimentalFunction checks whether the given experiment is enabled for
@@ -244,4 +253,103 @@ func (s *Scope) experimentalFunction(experiment experiments.Experiment, fn funct
 			return cty.DynamicVal, err
 		},
 	})
+}
+
+type funcCacheEntry struct {
+	planTimestamp time.Time
+	functions     *map[string]function.Function
+}
+
+type providerFuncCacheEntry struct {
+	base *map[string]function.Function
+	prov map[string]function.Function
+	both map[string]function.Function
+}
+
+type funcCache struct {
+	sync.Mutex
+	cache         map[bool]map[bool]map[string]funcCacheEntry
+	providerCache []providerFuncCacheEntry
+}
+
+var cachedFuncs = &funcCache{
+	cache:         map[bool]map[bool]map[string]funcCacheEntry{},
+	providerCache: []providerFuncCacheEntry{},
+}
+
+func (f *funcCache) functions(s *Scope) *map[string]function.Function {
+	f.Lock()
+	defer f.Unlock()
+
+	byPurity, ok := f.cache[s.PureOnly]
+	if !ok {
+		byPurity = map[bool]map[string]funcCacheEntry{}
+		f.cache[s.PureOnly] = byPurity
+	}
+
+	byConsole, ok := byPurity[s.ConsoleMode]
+	if !ok {
+		byConsole = map[string]funcCacheEntry{}
+		byPurity[s.ConsoleMode] = byConsole
+	}
+
+	byBaseDir, ok := byConsole[s.BaseDir]
+	if !ok {
+		fns := functions(s)
+		byBaseDir = funcCacheEntry{
+			functions:     &fns,
+			planTimestamp: s.PlanTimestamp,
+		}
+		byConsole[s.BaseDir] = byBaseDir
+	} else if !byBaseDir.planTimestamp.Equal(s.PlanTimestamp) {
+		fns := functions(s)
+		byBaseDir.functions = &fns
+		byBaseDir.planTimestamp = s.PlanTimestamp
+	}
+
+	return byBaseDir.functions
+}
+
+func matchSet(a, b map[string]function.Function) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if _, ok := b[k]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func (f *funcCache) providerFunctions(base *map[string]function.Function, prov map[string]function.Function) map[string]function.Function {
+	f.Lock()
+	defer f.Unlock()
+
+	// See if we've already got a cache entry for this set of provider functions.
+	for _, pc := range f.providerCache {
+		if pc.base != base {
+			continue
+		}
+		if matchSet(pc.prov, prov) {
+			return pc.both
+		}
+	}
+
+	// We didn't find a match, so we need to create a new entry.
+	both := maps.Clone(*base)
+	maps.Copy(both, prov)
+
+	f.providerCache = append(f.providerCache, providerFuncCacheEntry{
+		base: base,
+		prov: prov,
+		both: both,
+	})
+
+	fmt.Printf("len(base) == %d\n", len(*base))
+	fmt.Printf("len(prov) == %d\n", len(prov))
+	fmt.Printf("len(both) == %d\n", len(both))
+	fmt.Printf("len(f.providerCache) == %d\n", len(f.providerCache))
+
+	return both
 }
