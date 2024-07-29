@@ -53,6 +53,8 @@ type GraphNodeResourceInstance interface {
 type NodeAbstractResource struct {
 	Addr addrs.ConfigResource
 
+	refs []*addrs.Reference
+
 	// The fields below will be automatically set using the Attach
 	// interfaces if you're running those transforms, but also be explicitly
 	// set if you already have that information.
@@ -145,6 +147,10 @@ func (n *NodeAbstractResource) ReferenceableAddrs() []addrs.Referenceable {
 
 // GraphNodeReferencer
 func (n *NodeAbstractResource) References() []*addrs.Reference {
+	if n.refs != nil {
+		return n.refs
+	}
+
 	var result []*addrs.Reference
 	// If we have a config then we prefer to use that.
 	if c := n.Config; c != nil {
@@ -210,6 +216,7 @@ func (n *NodeAbstractResource) References() []*addrs.Reference {
 		}
 	}
 
+	n.refs = result
 	return result
 }
 
