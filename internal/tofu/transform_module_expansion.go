@@ -88,9 +88,19 @@ func (t *ModuleExpansionTransformer) Transform(g *Graph) error {
 	// Modules implicitly depend on their child modules, so connect closers to
 	// other which contain their path.
 	for _, c := range t.closers {
-		for _, d := range t.closers {
-			if len(d.Addr) > len(c.Addr) && c.Addr.Equal(d.Addr[:len(c.Addr)]) {
-				g.Connect(dag.BasicEdge(c, d))
+		// For a closer c with address ["module.foo", "module.bar", "module.baz"],
+		// we'll look up all potential parent modules:
+		//
+		// - t.closers["module.foo"]
+		// - t.closers["module.foo.module.bar"]
+		//
+		// And connect the parent module to c.
+		//
+		// We skip i=0 because c.Addr[0:0] == [], and the root module should not exist in t.closers.
+		for i := 1; i < len(c.Addr); i++ {
+			parentAddr := c.Addr[0:i].String()
+			if parent, ok := t.closers[parentAddr]; ok {
+				g.Connect(dag.BasicEdge(parent, c))
 			}
 		}
 	}
