@@ -31,6 +31,8 @@ type State struct {
 	// an implementation detail and must not be used by outside callers.
 	Modules map[string]*Module
 
+	byAddr map[string]map[*Module]struct{}
+
 	byParent map[string]map[string]*Module
 
 	// CheckResults contains a snapshot of the statuses of checks at the
@@ -53,6 +55,7 @@ func NewState() *State {
 	modules[addrs.RootModuleInstance.String()] = NewModule(addrs.RootModuleInstance)
 	return &State{
 		Modules:  modules,
+		byAddr:   map[string]map[*Module]struct{}{},
 		byParent: map[string]map[string]*Module{},
 	}
 }
@@ -96,7 +99,7 @@ func (s *State) Module(addr addrs.ModuleInstance) *Module {
 // ModuleInstances returns the set of Module states that matches the given path.
 func (s *State) ModuleInstances(addr addrs.Module) []*Module {
 	var ms []*Module
-	for _, m := range s.Modules {
+	for m := range s.byAddr[addr.String()] {
 		if m.Addr.Module().Equal(addr) {
 			ms = append(ms, m)
 		}
@@ -561,10 +564,22 @@ func (s *State) MoveModuleInstance(src, dst addrs.ModuleInstance) {
 	}
 
 	s.RemoveModule(src)
+	if byParent, ok := s.byParent[src.Parent().String()]; ok {
+		delete(byParent, src.String())
+	}
+	if byAddr, ok := s.byAddr[src.String()]; ok {
+		delete(byAddr, srcMod)
+	}
 
 	srcMod.Addr = dst
 	s.EnsureModule(dst)
 	s.Modules[dst.String()] = srcMod
+	if _, ok := s.byAddr[dst.String()]; !ok {
+		s.byAddr[dst.String()] = map[*Module]struct{}{srcMod: {}}
+	} else {
+		s.byAddr[dst.String()][srcMod] = struct{}{}
+	}
+
 	if _, ok := s.byParent[dst.Parent().String()]; !ok {
 		s.byParent[dst.Parent().String()] = map[string]*Module{dst.String(): srcMod}
 	} else {
