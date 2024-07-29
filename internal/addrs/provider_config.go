@@ -405,7 +405,7 @@ func (pc AbsProviderConfig) String() string {
 		parts = append(parts, pc.Module.String())
 	}
 
-	parts = append(parts, fmt.Sprintf("provider[%q]", pc.Provider))
+	parts = append(parts, "provider[\""+pc.Provider.String()+"\"]")
 
 	if pc.Alias != "" {
 		parts = append(parts, pc.Alias)

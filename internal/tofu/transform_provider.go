@@ -800,11 +800,9 @@ func (t *ProviderConfigTransformer) addProxyProviders(g *Graph, c *configs.Confi
 
 	callName := callAddr.Name
 	var parentCfg *configs.ModuleCall
-	for name, mod := range parent.Module.ModuleCalls {
-		if name == callName {
-			parentCfg = mod
-			break
-		}
+	mod, ok := parent.Module.ModuleCalls[callName]
+	if ok {
+		parentCfg = mod
 	}
 
 	if parentCfg == nil {
