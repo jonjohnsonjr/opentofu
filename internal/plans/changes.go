@@ -20,8 +20,7 @@ import (
 type Changes struct {
 	// Resources tracks planned changes to resource instance objects.
 	Resources []*ResourceInstanceChangeSrc
-
-	byParent map[string]map[string]*OutputChangeSrc
+	byAddr    map[string]*ResourceInstanceChangeSrc
 
 	// Outputs tracks planned changes output values.
 	//
@@ -31,12 +30,14 @@ type Changes struct {
 	// externally-visible, while other outputs are implementation details and
 	// can be easily re-calculated during the apply phase. Therefore only root
 	// module outputs will survive a round-trip through a plan file.
-	Outputs []*OutputChangeSrc
+	Outputs  []*OutputChangeSrc
+	byParent map[string]map[string]*OutputChangeSrc
 }
 
 // NewChanges returns a valid Changes object that describes no changes.
 func NewChanges() *Changes {
 	return &Changes{
+		byAddr:   map[string]*ResourceInstanceChangeSrc{},
 		byParent: map[string]map[string]*OutputChangeSrc{},
 	}
 }
@@ -65,7 +66,7 @@ func (c *Changes) Empty() bool {
 // resource instance of the given address, if any. Returns nil if no change is
 // planned.
 func (c *Changes) ResourceInstance(addr addrs.AbsResourceInstance) *ResourceInstanceChangeSrc {
-	for _, rc := range c.Resources {
+	if rc, ok := c.byAddr[addr.String()]; ok {
 		if rc.Addr.Equal(addr) && rc.DeposedKey == states.NotDeposed {
 			return rc
 		}

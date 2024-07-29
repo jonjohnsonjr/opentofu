@@ -155,7 +155,7 @@ func (s *Scope) Functions() *map[string]function.Function {
 }
 
 func functions(s *Scope) map[string]function.Function {
-	fmt.Printf("Functions(%t, %t, %q, %s)\n", s.PureOnly, s.ConsoleMode, s.BaseDir, s.PlanTimestamp)
+	// fmt.Printf("Functions(%t, %t, %q, %s)\n", s.PureOnly, s.ConsoleMode, s.BaseDir, s.PlanTimestamp)
 	// Some of our functions are just directly the cty stdlib functions.
 	// Others are implemented in the subdirectory "funcs" here in this
 	// repository. New functions should generally start out their lives
@@ -268,12 +268,12 @@ type providerFuncCacheEntry struct {
 
 type funcCache struct {
 	sync.Mutex
-	cache         map[bool]map[bool]map[string]funcCacheEntry
+	cache         map[bool]map[bool]map[string]*funcCacheEntry
 	providerCache []providerFuncCacheEntry
 }
 
 var cachedFuncs = &funcCache{
-	cache:         map[bool]map[bool]map[string]funcCacheEntry{},
+	cache:         map[bool]map[bool]map[string]*funcCacheEntry{},
 	providerCache: []providerFuncCacheEntry{},
 }
 
@@ -283,20 +283,20 @@ func (f *funcCache) functions(s *Scope) *map[string]function.Function {
 
 	byPurity, ok := f.cache[s.PureOnly]
 	if !ok {
-		byPurity = map[bool]map[string]funcCacheEntry{}
+		byPurity = map[bool]map[string]*funcCacheEntry{}
 		f.cache[s.PureOnly] = byPurity
 	}
 
 	byConsole, ok := byPurity[s.ConsoleMode]
 	if !ok {
-		byConsole = map[string]funcCacheEntry{}
+		byConsole = map[string]*funcCacheEntry{}
 		byPurity[s.ConsoleMode] = byConsole
 	}
 
 	byBaseDir, ok := byConsole[s.BaseDir]
 	if !ok {
 		fns := functions(s)
-		byBaseDir = funcCacheEntry{
+		byBaseDir = &funcCacheEntry{
 			functions:     &fns,
 			planTimestamp: s.PlanTimestamp,
 		}
@@ -346,10 +346,10 @@ func (f *funcCache) providerFunctions(base *map[string]function.Function, prov m
 		both: both,
 	})
 
-	fmt.Printf("len(base) == %d\n", len(*base))
-	fmt.Printf("len(prov) == %d\n", len(prov))
-	fmt.Printf("len(both) == %d\n", len(both))
-	fmt.Printf("len(f.providerCache) == %d\n", len(f.providerCache))
+	// fmt.Printf("len(base) == %d\n", len(*base))
+	// fmt.Printf("len(prov) == %d\n", len(prov))
+	// fmt.Printf("len(both) == %d\n", len(both))
+	// fmt.Printf("len(f.providerCache) == %d\n", len(f.providerCache))
 
 	return both
 }

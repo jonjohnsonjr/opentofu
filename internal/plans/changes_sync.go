@@ -41,6 +41,7 @@ func (cs *ChangesSync) AppendResourceInstanceChange(changeSrc *ResourceInstanceC
 
 	s := changeSrc.DeepCopy()
 	cs.changes.Resources = append(cs.changes.Resources, s)
+	cs.changes.byAddr[s.Addr.String()] = s
 }
 
 // GetResourceInstanceChange searches the set of resource instance changes for
@@ -133,6 +134,7 @@ func (cs *ChangesSync) RemoveResourceInstanceChange(addr addrs.AbsResourceInstan
 		}
 		copy(cs.changes.Resources[i:], cs.changes.Resources[i+1:])
 		cs.changes.Resources = cs.changes.Resources[:len(cs.changes.Resources)-1]
+		delete(cs.changes.byAddr, r.Addr.String())
 		return
 	}
 }
