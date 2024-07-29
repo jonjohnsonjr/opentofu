@@ -31,6 +31,8 @@ type State struct {
 	// an implementation detail and must not be used by outside callers.
 	Modules map[string]*Module
 
+	byParent map[string]map[string]*Module
+
 	// CheckResults contains a snapshot of the statuses of checks at the
 	// end of the most recent update to the state. Callers might compare
 	// checks between runs to see if e.g. a previously-failing check has
@@ -50,7 +52,8 @@ func NewState() *State {
 	modules := map[string]*Module{}
 	modules[addrs.RootModuleInstance.String()] = NewModule(addrs.RootModuleInstance)
 	return &State{
-		Modules: modules,
+		Modules:  modules,
+		byParent: map[string]map[string]*Module{},
 	}
 }
 
@@ -105,7 +108,7 @@ func (s *State) ModuleInstances(addr addrs.Module) []*Module {
 // parentAddr instance.
 func (s *State) ModuleOutputs(parentAddr addrs.ModuleInstance, module addrs.ModuleCall) []*OutputValue {
 	var os []*OutputValue
-	for _, m := range s.Modules {
+	for _, m := range s.byParent[parentAddr.String()] {
 		// can't get outputs from the root module
 		if m.Addr.IsRoot() {
 			continue
@@ -165,6 +168,17 @@ func (s *State) EnsureModule(addr addrs.ModuleInstance) *Module {
 	if ms == nil {
 		ms = NewModule(addr)
 		s.Modules[addr.String()] = ms
+		parent := addr.Parent()
+		ps := parent.String()
+		if s.byParent == nil {
+			s.byParent = map[string]map[string]*Module{ps: {addr.String(): ms}}
+		}
+		if _, ok := s.byParent[ps]; !ok {
+			s.byParent[ps] = map[string]*Module{addr.String(): ms}
+		} else {
+			s.byParent[ps][addr.String()] = ms
+		}
+
 	}
 	return ms
 }
@@ -551,6 +565,11 @@ func (s *State) MoveModuleInstance(src, dst addrs.ModuleInstance) {
 	srcMod.Addr = dst
 	s.EnsureModule(dst)
 	s.Modules[dst.String()] = srcMod
+	if _, ok := s.byParent[dst.Parent().String()]; !ok {
+		s.byParent[dst.Parent().String()] = map[string]*Module{dst.String(): srcMod}
+	} else {
+		s.byParent[dst.Parent().String()][dst.String()] = srcMod
+	}
 
 	// Update any Resource's addresses.
 	if srcMod.Resources != nil {

@@ -152,6 +152,12 @@ func (cs *ChangesSync) AppendOutputChange(changeSrc *OutputChangeSrc) {
 
 	s := changeSrc.DeepCopy()
 	cs.changes.Outputs = append(cs.changes.Outputs, s)
+	parent := changeSrc.Addr.Module.Parent()
+	if _, ok := cs.changes.byParent[parent.String()]; !ok {
+		cs.changes.byParent[parent.String()] = map[string]*OutputChangeSrc{changeSrc.Addr.String(): changeSrc}
+	} else {
+		cs.changes.byParent[parent.String()][changeSrc.Addr.String()] = changeSrc
+	}
 }
 
 // GetOutputChange searches the set of output value changes for one matching

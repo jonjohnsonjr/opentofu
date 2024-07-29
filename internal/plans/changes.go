@@ -21,6 +21,8 @@ type Changes struct {
 	// Resources tracks planned changes to resource instance objects.
 	Resources []*ResourceInstanceChangeSrc
 
+	byParent map[string]map[string]*OutputChangeSrc
+
 	// Outputs tracks planned changes output values.
 	//
 	// Note that although an in-memory plan contains planned changes for
@@ -34,7 +36,9 @@ type Changes struct {
 
 // NewChanges returns a valid Changes object that describes no changes.
 func NewChanges() *Changes {
-	return &Changes{}
+	return &Changes{
+		byParent: map[string]map[string]*OutputChangeSrc{},
+	}
 }
 
 func (c *Changes) Empty() bool {
@@ -150,7 +154,7 @@ func (c *Changes) RootOutputValues() []*OutputChangeSrc {
 func (c *Changes) OutputValues(parent addrs.ModuleInstance, module addrs.ModuleCall) []*OutputChangeSrc {
 	var res []*OutputChangeSrc
 
-	for _, oc := range c.Outputs {
+	for _, oc := range c.byParent[parent.String()] {
 		// we can't evaluate root module outputs
 		if oc.Addr.Module.Equal(addrs.RootModuleInstance) {
 			continue
